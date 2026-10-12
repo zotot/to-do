@@ -180,7 +180,7 @@ def prevoir(recurrences: list[Recurrence], du: date, au: date) -> list[Prevision
             if d < du:
                 continue
             previsions.append(
-                Prevision(d, r.cle, montant_prevu(r), r.frequence, r.confiance, r.montant_variable)
+                Prevision(d, r.cle, montant_prevu(r), r.frequence, r.confiance, r.montant_variable, r.libelle)
             )
     previsions.sort(key=lambda p: (p.date, p.montant))
     return previsions

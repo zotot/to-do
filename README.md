@@ -28,6 +28,10 @@ Options utiles :
 | `--du 01/11/2026` | début de la prévision (par défaut : lendemain du dernier relevé) |
 | `--debits` | n'affiche que les sorties d'argent |
 | `--export previsions.csv` | exporte les échéances prévues (s'ouvre dans Excel) |
+| `--budget` | affiche les dépenses du mois par catégorie, comparées à votre budget |
+| `--mois 05/2026` | mois analysé par `--budget` (par défaut : mois du dernier relevé) |
+| `--creer-budget` | crée `budget.json` à partir de vos dépenses moyennes |
+| `--config mon_budget.json` | utilise un autre fichier de budget que `budget.json` |
 
 Exemple avec les relevés fournis dans `exemples/` :
 
@@ -47,6 +51,59 @@ $ python3 -m assistant_financier exemples/ --solde 1204.33
   dim. 05/07/2026  LOYER IMMO GESTION                    -780,00 €   solde prévu : +2 874,33 €
   ...
 ```
+
+## Budget mensuel par catégorie
+
+Chaque opération est classée automatiquement (Logement, Alimentation, Transport, Abonnements & loisirs,
+Énergie & eau, Télécom, Santé, Assurances, Crédits, Impôts, Shopping, Restaurants, Épargne…)
+d'après les mots-clés de son libellé.
+
+1. Créez votre budget à partir de vos habitudes :
+
+   ```bash
+   python3 -m assistant_financier releves/ --creer-budget
+   ```
+
+   Cela écrit `budget.json` avec, pour chaque catégorie, votre moyenne mensuelle arrondie à la dizaine.
+2. Modifiez `budget.json` pour fixer vos objectifs, et ajoutez vos propres mots-clés si besoin
+   (les vôtres passent avant ceux par défaut) :
+
+   ```json
+   {
+     "budget": { "Alimentation": 350, "Restaurants & sorties": 100, "Animaux": 40 },
+     "categories": {
+       "Animaux": ["VETERINAIRE", "ZOOPLUS"],
+       "Restaurants & sorties": ["LA CAVE DU COIN"]
+     }
+   }
+   ```
+3. Suivez le mois :
+
+   ```bash
+   python3 -m assistant_financier releves/ --budget
+   ```
+
+```
+=== Budget de juin 2026 (relevés jusqu'au 23/06, fin de mois estimée avec les prélèvements prévus) ===
+
+  Catégorie                     Dépensé  Fin de mois      Moyenne       Budget        Reste
+  Logement                     780,00 €     780,00 €     780,00 €     780,00 €      +0,00 €  ████████████ 100%
+  Alimentation                 246,57 €     246,57 €     415,11 €     350,00 €    +103,43 €  ████████░░░░  70%
+  ...
+  Total dépenses (hors épargne) : 1 544,76 €, 1 544,76 € prévus en fin de mois / budget 1 650,00 €
+  Revenus du mois             : 2 450,00 €
+  Reste à vivre / épargne     : +905,24 €
+
+  Opérations non classées (ajoutez des mots-clés dans budget.json, rubrique "categories") :
+    12/06  CB LA CAVE DU COIN 12/06                               -23,50 €
+```
+
+- Si le mois n'est pas terminé, la colonne **Fin de mois** ajoute les prélèvements récurrents encore
+  attendus, pour vous prévenir *avant* un dépassement (« ⚠ dépassement prévu »).
+- La **moyenne** est calculée sur les mois entièrement couverts par vos relevés.
+- Les **remboursements** (CPAM, retour d'un achat) viennent en déduction de leur catégorie ;
+  les salaires et virements reçus comptent comme revenus.
+- L'**épargne** (livret, assurance vie…) est affichée mais exclue du total des dépenses.
 
 ## Comment ça marche
 
@@ -74,6 +131,5 @@ python3 -m unittest discover -s tests
 ## Pistes pour la suite
 
 - Lecture des relevés **PDF** (dépend de la mise en page de chaque banque).
-- Catégorisation des dépenses (logement, transport, abonnements…) et budget mensuel.
 - Alertes : prélèvement inhabituel, hausse d'un abonnement, découvert prévu.
 - Interface web ou tableau de bord.

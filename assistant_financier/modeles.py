@@ -48,3 +48,4 @@ class Prevision:
     frequence: str
     confiance: float
     montant_variable: bool
+    libelle_origine: str = ""  # libellé bancaire complet de la dernière occurrence
