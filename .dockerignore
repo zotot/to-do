@@ -1,0 +1,15 @@
+# Données personnelles : ne jamais les envoyer dans l'image
+releves/
+donnees/
+budget.json
+*.ofx
+*.qfx
+
+.git/
+.gitignore
+**/__pycache__/
+*.pyc
+tests/
+Dockerfile
+docker-compose.yml
+.env

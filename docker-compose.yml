@@ -1,0 +1,9 @@
+services:
+  assistant:
+    build: .
+    image: assistant-financier
+    # Écrit budget.json et les exports avec votre utilisateur, pas en root.
+    user: "${UID:-1000}:${GID:-1000}"
+    volumes:
+      # Dossier contenant releves/ (vos relevés CSV/OFX) et budget.json
+      - ./donnees:/donnees

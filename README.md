@@ -4,22 +4,68 @@ Analyse vos relevés de compte, repère les opérations qui reviennent (abonneme
 loyer, crédit, factures, salaire…) à partir de leur **date** et de leur **libellé**,
 puis **anticipe les prochains prélèvements**.
 
-Python 3.10 ou plus, sans aucune dépendance à installer.
+Fonctionne avec **Docker** (recommandé) ou directement avec Python 3.10+, sans dépendance à installer.
+
+## Avec Docker
+
+1. Préparez un dossier `donnees/` à côté de `docker-compose.yml`, et mettez-y vos relevés :
+
+   ```
+   donnees/
+   ├── releves/        ← vos relevés CSV/OFX
+   └── budget.json     ← créé par --creer-budget (facultatif)
+   ```
+
+   ```bash
+   mkdir -p donnees/releves
+   ```
+
+2. **Sous Linux uniquement**, pour que les fichiers créés (budget.json, exports) vous appartiennent :
+
+   ```bash
+   printf "UID=$(id -u)\nGID=$(id -g)\n" > .env
+   ```
+
+   (inutile avec Docker Desktop sur Mac ou Windows, ou si votre identifiant est 1000).
+
+3. Lancez, avec les mêmes options que ci-dessous :
+
+   ```bash
+   docker compose run --rm assistant                          # récurrences et prochaines échéances
+   docker compose run --rm assistant --alertes --solde 1520.40
+   docker compose run --rm assistant --creer-budget
+   docker compose run --rm assistant --budget
+   docker compose run --rm assistant --solde 1520.40 --export previsions.csv   # écrit dans donnees/
+   ```
+
+   La première commande construit l'image (environ 175 Mo). Après une mise à jour du code :
+   `docker compose build`.
+
+Pour essayer sans vos données, avec les relevés d'exemple intégrés à l'image :
+
+```bash
+docker compose build
+docker run --rm assistant-financier /app/exemples --solde 1204.33
+```
+
+Vos relevés et votre `budget.json` restent sur votre machine : ils sont montés dans le conteneur
+au lancement, jamais copiés dans l'image (voir `.dockerignore`), et `donnees/` est exclu de git.
 
 ## Utilisation
 
 1. Exportez vos relevés depuis l'espace client de votre banque au format **CSV** ou **OFX**
    (souvent « Télécharger mes opérations »). Plus il y a de mois, meilleure est la détection :
    3 mois minimum, 12 pour repérer les échéances annuelles.
-2. Mettez-les dans un dossier, par exemple `releves/`. Les relevés qui se chevauchent ne posent pas de problème :
+2. Mettez-les dans un dossier `releves/` (lu par défaut, sinon indiquez le chemin). Les relevés qui se chevauchent ne posent pas de problème :
    les doublons sont supprimés.
 3. Lancez :
 
 ```bash
-python3 -m assistant_financier releves/
+python3 -m assistant_financier            # lit le dossier releves/
+python3 -m assistant_financier mes_releves/2026/
 ```
 
-Options utiles :
+Options utiles (identiques avec Docker) :
 
 | Option | Effet |
 |---|---|
@@ -171,6 +217,8 @@ d'après les mots-clés de son libellé.
 
 ```bash
 python3 -m unittest discover -s tests
+# ou dans le conteneur :
+docker run --rm -v "$PWD/tests:/app/tests:ro" -w /app --entrypoint python assistant-financier -m unittest discover -s tests
 ```
 
 ## Pistes pour la suite

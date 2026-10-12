@@ -140,6 +140,11 @@ def _fichiers(entrees: list[str]) -> list[Path]:
             fichiers += sorted(f for f in p.iterdir() if f.suffix.lower() in EXTENSIONS)
         elif p.exists():
             fichiers.append(p)
+        elif entrees == ["releves"]:
+            raise SystemExit(
+                "Aucun dossier releves/ ici : placez-y vos relevés CSV/OFX, ou indiquez leur chemin "
+                "en argument."
+            )
         else:
             raise SystemExit(f"Fichier introuvable : {e}")
     if not fichiers:
@@ -152,7 +157,10 @@ def main(argv: list[str] | None = None) -> int:
         prog="assistant_financier",
         description="Analyse vos relevés de compte et anticipe les prochains prélèvements.",
     )
-    parser.add_argument("releves", nargs="+", help="fichiers CSV/OFX ou dossier les contenant")
+    parser.add_argument(
+        "releves", nargs="*", default=["releves"],
+        help="fichiers CSV/OFX ou dossier les contenant (défaut : dossier releves/)",
+    )
     parser.add_argument("--jours", type=int, default=31, help="horizon de prévision en jours (défaut : 31)")
     parser.add_argument("--du", help="début de la prévision (JJ/MM/AAAA). Défaut : lendemain du dernier relevé")
     parser.add_argument("--solde", type=float, help="solde actuel, pour projeter le solde après chaque échéance")
