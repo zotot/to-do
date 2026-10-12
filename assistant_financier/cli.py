@@ -7,6 +7,7 @@ Exemples :
     python -m assistant_financier releves/ --budget
     python -m assistant_financier releves/ --budget --mois 05/2026
     python -m assistant_financier releves/ --creer-budget
+    python -m assistant_financier releves/ --alertes
 """
 
 from __future__ import annotations
@@ -17,6 +18,7 @@ import sys
 from datetime import date, timedelta
 from pathlib import Path
 
+from .alertes import detecter_hausses
 from .analyse import detecter_recurrences, montant_prevu, prevoir
 from .budget import RapportBudget, charger_config, ecrire_config, rapport_mensuel, suggerer_budget
 from .categories import Categoriseur
@@ -38,6 +40,26 @@ def euros(montant: float, signe: bool = True) -> str:
 def _barre(taux: float, largeur: int = 12) -> str:
     plein = min(largeur, round(taux * largeur))
     return "█" * plein + "░" * (largeur - plein)
+
+
+JOURS_HAUSSE_RECENTE = 62
+
+
+def afficher_hausses(recurrences, fin_releves: date) -> None:
+    hausses = detecter_hausses(recurrences)
+    if not hausses:
+        return
+    print("=== ⚠ Alertes : hausses d'abonnements ===")
+    for h in hausses:
+        recente = " NOUVEAU" if (fin_releves - h.depuis).days <= JOURS_HAUSSE_RECENTE else ""
+        print(
+            f"  {h.libelle[:32]:<32} {euros(h.ancien, False):>11} → {euros(h.nouveau, False):<11}"
+            f" (+{h.pourcentage * 100:.1f} %)".replace(".", ",") + f" depuis le {h.depuis:%d/%m/%Y}, soit {euros(h.surcout_annuel)} par an{recente}"
+        )
+    total = sum(h.surcout_annuel for h in hausses)
+    if len(hausses) > 1:
+        print(f"  Surcoût total : {euros(total)} par an")
+    print()
 
 
 def afficher_budget(r: RapportBudget, fin_releves: date, budget_suggere: bool, chemin_config: Path) -> None:
@@ -110,6 +132,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--mois", help="mois du budget (MM/AAAA). Défaut : mois du dernier relevé")
     parser.add_argument("--config", default="budget.json", help="fichier de budget et de catégories (défaut : budget.json)")
     parser.add_argument("--creer-budget", action="store_true", help="créer le fichier de budget à partir de vos moyennes")
+    parser.add_argument("--alertes", action="store_true", help="n'afficher que les alertes (hausses d'abonnements)")
     args = parser.parse_args(argv)
 
     transactions = charger_releves(_fichiers(args.releves))
@@ -127,6 +150,12 @@ def main(argv: list[str] | None = None) -> int:
         toutes = [r for r in toutes if r.montant_moyen < 0]
     recurrences = [r for r in toutes if r.active]
     arretees = [r for r in toutes if not r.active]
+
+    afficher_hausses(recurrences, fin_releves)
+    if args.alertes:
+        if not detecter_hausses(recurrences):
+            print("Aucune hausse d'abonnement détectée.")
+        return 0
 
     print("=== Opérations récurrentes détectées ===")
     if not recurrences:
@@ -226,6 +255,8 @@ def _budget(args: argparse.Namespace, transactions) -> int:
     previsions = prevoir(recurrences, fin_releves + timedelta(days=1), fin_releves + timedelta(days=31))
     rapport = rapport_mensuel(transactions, mois, categoriseur, budget, previsions)
     afficher_budget(rapport, fin_releves, budget_suggere, chemin)
+    print()
+    afficher_hausses(recurrences, fin_releves)
     return 0
 
 

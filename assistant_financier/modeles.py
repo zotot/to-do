@@ -34,6 +34,8 @@ class Recurrence:
     confiance: float = 0.0
     active: bool = True  # False si l'opération n'apparaît plus dans les derniers relevés
     jamais_le_week_end: bool = False
+    # Tarifs successifs d'un montant fixe : [(date du premier prélèvement à ce tarif, montant), ...]
+    paliers: list[tuple[date, float]] = field(default_factory=list)
 
     @property
     def derniere_date(self) -> date:
@@ -49,3 +51,19 @@ class Prevision:
     confiance: float
     montant_variable: bool
     libelle_origine: str = ""  # libellé bancaire complet de la dernière occurrence
+
+
+@dataclass(frozen=True)
+class Hausse:
+    """Changement de tarif à la hausse d'un prélèvement récurrent."""
+
+    libelle: str
+    depuis: date
+    ancien: float  # montants positifs
+    nouveau: float
+    frequence: str
+    surcout_annuel: float
+
+    @property
+    def pourcentage(self) -> float:
+        return (self.nouveau - self.ancien) / self.ancien if self.ancien else 0.0

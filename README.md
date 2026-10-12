@@ -31,6 +31,7 @@ Options utiles :
 | `--budget` | affiche les dépenses du mois par catégorie, comparées à votre budget |
 | `--mois 05/2026` | mois analysé par `--budget` (par défaut : mois du dernier relevé) |
 | `--creer-budget` | crée `budget.json` à partir de vos dépenses moyennes |
+| `--alertes` | n'affiche que les alertes de hausse d'abonnement |
 | `--config mon_budget.json` | utilise un autre fichier de budget que `budget.json` |
 
 Exemple avec les relevés fournis dans `exemples/` :
@@ -51,6 +52,24 @@ $ python3 -m assistant_financier exemples/ --solde 1204.33
   dim. 05/07/2026  LOYER IMMO GESTION                    -780,00 €   solde prévu : +2 874,33 €
   ...
 ```
+
+## Alertes : hausses d'abonnements
+
+Quand un prélèvement à montant fixe change de tarif, l'assistant le signale en tête du rapport
+(et sous le budget) :
+
+```
+=== ⚠ Alertes : hausses d'abonnements ===
+  FREE MOBILE                          19,99 € → 24,99 €     (+25,0 %) depuis le 08/06/2026, soit +60,00 € par an NOUVEAU
+  NETFLIX COM                          13,49 € → 15,99 €     (+18,5 %) depuis le 12/05/2026, soit +30,00 € par an NOUVEAU
+  Surcoût total : +90,00 € par an
+```
+
+- **NOUVEAU** marque une hausse survenue dans les 2 derniers mois des relevés.
+- Les prévisions et le budget utilisent directement le nouveau tarif.
+- Ne déclenchent pas d'alerte : les écarts de moins de 1 % (conversion de devise), les factures
+  à montant variable (électricité…), les baisses, les hausses de revenus et les abonnements résiliés.
+- Pour vérifier seulement les alertes : `python3 -m assistant_financier releves/ --alertes`.
 
 ## Budget mensuel par catégorie
 
@@ -131,5 +150,5 @@ python3 -m unittest discover -s tests
 ## Pistes pour la suite
 
 - Lecture des relevés **PDF** (dépend de la mise en page de chaque banque).
-- Alertes : prélèvement inhabituel, hausse d'un abonnement, découvert prévu.
+- Autres alertes : prélèvement inconnu, facture variable anormalement élevée, découvert prévu.
 - Interface web ou tableau de bord.

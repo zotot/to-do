@@ -24,6 +24,8 @@ MOIS_PAR_FREQUENCE = {"mensuelle": 1, "bimestrielle": 2, "trimestrielle": 3, "se
 
 SEUIL_REGULARITE = 0.75  # part minimale d'intervalles conformes à la fréquence
 SEUIL_MONTANT_VARIABLE = 0.05  # écart-type relatif au-delà duquel le montant est "variable"
+TOLERANCE_TARIF = 0.01  # deux montants à moins de 1 % l'un de l'autre = même tarif (conversion de devise…)
+MAX_CHANGEMENTS_TARIF = 2
 
 
 def _classer(intervalles: list[int]) -> tuple[str, float, float] | None:
@@ -53,6 +55,33 @@ def _ajouter_mois(d: date, mois: int, jour: int) -> date:
     return date(annee, m, min(jour, calendar.monthrange(annee, m)[1]))
 
 
+def _paliers(operations: list[Transaction], periode: float) -> list[tuple[date, float]] | None:
+    """Découpe les montants en paliers de tarif consécutifs (13,49 € puis 15,99 €…).
+
+    Renvoie None si le montant varie trop souvent pour être un tarif fixe (facture d'énergie…).
+    """
+    paliers: list[tuple[date, float]] = []
+    tailles: list[int] = []
+    for t in operations:
+        montant = abs(t.montant)
+        if paliers and abs(montant - paliers[-1][1]) <= paliers[-1][1] * TOLERANCE_TARIF + 0.005:
+            tailles[-1] += 1
+        else:
+            paliers.append((t.date, montant))
+            tailles.append(1)
+    if len(paliers) == 1:
+        return paliers
+    # Il faut assez d'historique pour distinguer un changement de tarif d'un montant variable,
+    # sauf pour les échéances espacées (trimestrielles, annuelles) où 2 occurrences suffisent.
+    if len(operations) < (2 if periode >= 85 else 3):
+        return None
+    # Un tarif intermédiaire doit tenir au moins deux échéances ; le premier palier peut être
+    # tronqué par le début des relevés, le dernier vient peut-être de commencer.
+    if len(paliers) - 1 > MAX_CHANGEMENTS_TARIF or any(n < 2 for n in tailles[1:-1]):
+        return None
+    return paliers
+
+
 def _evaluer(cle: str, operations: list[Transaction], min_occurrences: int = 2) -> Recurrence | None:
     operations = sorted(operations, key=lambda t: t.date)
     # Plusieurs opérations le même jour : on les traite comme une seule échéance.
@@ -67,7 +96,9 @@ def _evaluer(cle: str, operations: list[Transaction], min_occurrences: int = 2) 
 
     montants = [abs(t.montant) for t in operations]
     moy = mean(montants)
-    variabilite = pstdev(montants) / moy if moy else 0.0
+    paliers = _paliers(operations, periode)
+    # Un changement de tarif n'est pas un montant variable : on prévoit le nouveau tarif.
+    variabilite = 0.0 if paliers else (pstdev(montants) / moy if moy else 0.0)
 
     jour_du_mois = None
     if frequence in MOIS_PAR_FREQUENCE:
@@ -89,6 +120,7 @@ def _evaluer(cle: str, operations: list[Transaction], min_occurrences: int = 2) 
         occurrences=operations,
         confiance=round(confiance, 2),
         jamais_le_week_end=all(d.weekday() < 5 for d in dates),
+        paliers=paliers or [],
     )
 
 
