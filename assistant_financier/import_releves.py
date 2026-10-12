@@ -155,18 +155,29 @@ def lire_ofx(chemin: Path) -> list[Transaction]:
     return transactions
 
 
-def charger_releves(chemins: list[Path]) -> list[Transaction]:
-    """Charge plusieurs relevés, supprime les doublons (relevés qui se chevauchent) et trie par date."""
+def charger_releves(chemins: list[Path], erreurs: list[str] | None = None) -> list[Transaction]:
+    """Charge plusieurs relevés, supprime les doublons (relevés qui se chevauchent) et trie par date.
+
+    Si `erreurs` est fourni, un fichier illisible y est signalé et ignoré au lieu d'interrompre
+    le chargement (utile pour un dossier alimenté depuis plusieurs appareils).
+    """
     vues: set[tuple] = set()
     resultat = []
     for chemin in chemins:
         suffixe = chemin.suffix.lower()
-        if suffixe in (".ofx", ".qfx"):
-            lues = lire_ofx(chemin)
-        elif suffixe in (".csv", ".txt", ".tsv"):
-            lues = lire_csv(chemin)
-        else:
-            raise ValueError(f"Format non pris en charge : {chemin.name} (CSV ou OFX attendu)")
+        try:
+            if suffixe in (".ofx", ".qfx"):
+                lues = lire_ofx(chemin)
+            elif suffixe in (".csv", ".txt", ".tsv"):
+                lues = lire_csv(chemin)
+            else:
+                raise ValueError(f"Format non pris en charge : {chemin.name} (CSV ou OFX attendu)")
+        except (ValueError, OSError) as e:
+            if erreurs is None:
+                raise
+            message = str(e)
+            erreurs.append(message if message.startswith(chemin.name) else f"{chemin.name} : {message}")
+            continue
         # Deux opérations identiques le même jour dans un même relevé sont légitimes :
         # on ne déduplique qu'entre fichiers différents.
         compteur: dict[tuple, int] = {}

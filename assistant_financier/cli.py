@@ -135,12 +135,33 @@ def afficher_budget(r: RapportBudget, fin_releves: date, budget_suggere: bool, c
             print(f"    {t.date:%d/%m}  {t.libelle[:50]:<50} {euros(t.montant):>12}")
 
 
-def _fichiers(entrees: list[str]) -> list[Path]:
+# Dossiers techniques (Synology, corbeilles, instantanés) et fichiers temporaires à ne pas lire.
+DOSSIERS_IGNORES = {"@eaDir", "#recycle", "#snapshot", "#SynoRecycle", "@tmp"}
+
+
+def _est_ignore(chemin: Path, racine: Path) -> bool:
+    return any(
+        partie in DOSSIERS_IGNORES or partie.startswith((".", "~"))
+        for partie in chemin.relative_to(racine).parts
+    )
+
+
+def _fichiers(entrees: list[str], ignores: list[str] | None = None) -> list[Path]:
+    """Relevés à lire : fichiers donnés, ou contenu des dossiers (sous-dossiers compris).
+
+    Les fichiers d'un format non pris en charge (PDF, Excel…) sont ajoutés à `ignores`.
+    """
     fichiers = []
     for e in entrees:
         p = Path(e)
         if p.is_dir():
-            fichiers += sorted(f for f in p.iterdir() if f.suffix.lower() in EXTENSIONS)
+            for f in sorted(p.rglob("*")):
+                if not f.is_file() or _est_ignore(f, p):
+                    continue
+                if f.suffix.lower() in EXTENSIONS:
+                    fichiers.append(f)
+                elif ignores is not None:
+                    ignores.append(str(f.relative_to(p)))
         elif p.exists():
             fichiers.append(p)
         elif entrees == ["releves"]:
@@ -188,7 +209,15 @@ def main(argv: list[str] | None = None) -> int:
     )
     args = parser.parse_args(argv)
 
-    transactions = charger_releves(_fichiers(args.releves))
+    ignores: list[str] = []
+    erreurs: list[str] = []
+    transactions = charger_releves(_fichiers(args.releves, ignores), erreurs)
+    if ignores:
+        print(f"Fichiers ignorés (formats acceptés : CSV, OFX) : {', '.join(ignores)}")
+    for erreur in erreurs:
+        print(f"Fichier illisible, ignoré : {erreur}")
+    if ignores or erreurs:
+        print()
     if not transactions:
         print("Aucune opération lue dans les relevés.")
         return 1

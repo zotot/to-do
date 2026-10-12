@@ -52,6 +52,36 @@ class TestImport(unittest.TestCase):
         self.assertEqual([(t.date, t.montant) for t in ops], [(date(2026, 1, 8), -19.99), (date(2026, 2, 8), -19.99)])
 
 
+class TestDossierDrive(unittest.TestCase):
+    """Dossier alimenté depuis Synology Drive : sous-dossiers, fichiers parasites."""
+
+    def test_lecture_recursive_et_fichiers_ignores(self):
+        from assistant_financier.cli import _fichiers
+
+        with tempfile.TemporaryDirectory() as d:
+            racine = Path(d)
+            for chemin in ("2026/releve_T1.csv", "releve_T2.csv", "2026/@eaDir/releve_T1.csv@SynoEAStream",
+                           "#recycle/ancien.csv", ".cache/x.csv", "~$temp.csv", "releve_juin.pdf"):
+                (racine / chemin).parent.mkdir(parents=True, exist_ok=True)
+                (racine / chemin).write_text("x")
+            ignores = []
+            trouves = [str(f.relative_to(racine)) for f in _fichiers([d], ignores)]
+        self.assertEqual(trouves, ["2026/releve_T1.csv", "releve_T2.csv"])
+        self.assertEqual(ignores, ["releve_juin.pdf"])
+
+    def test_fichier_illisible_ignore(self):
+        with tempfile.TemporaryDirectory() as d:
+            note = Path(d) / "note.txt"
+            note.write_text("penser à payer la cantine\n")
+            erreurs = []
+            ops = charger_releves([note, EXEMPLES / "releve_2026_T1.csv"], erreurs)
+            with self.assertRaises(ValueError):
+                charger_releves([note])  # sans liste d'erreurs : comportement strict inchangé
+        self.assertTrue(ops)
+        self.assertEqual(len(erreurs), 1)
+        self.assertTrue(erreurs[0].startswith("note.txt : colonnes introuvables"))
+
+
 def mensuel(libelle, montant, jour, mois, annee=2026):
     return [Transaction(date(annee, m, jour), libelle, montant) for m in mois]
 

@@ -5,5 +5,7 @@ services:
     # Écrit budget.json et les exports avec votre utilisateur, pas en root.
     user: "${UID:-1000}:${GID:-1000}"
     volumes:
-      # Dossier contenant releves/ (vos relevés CSV/OFX) et budget.json
-      - ./donnees:/donnees
+      # Dossier contenant releves/ (vos relevés CSV/OFX) et budget.json.
+      # Par défaut ./donnees ; pour un dossier Synology Drive, ajoutez dans .env :
+      #   DONNEES=/volume1/homes/<utilisateur>/Drive/Finances
+      - ${DONNEES:-./donnees}:/donnees

@@ -41,8 +41,9 @@ Fonctionne avec **Docker** (recommandé) ou directement avec Python 3.10+, sans 
    La première commande construit l'image (environ 175 Mo). Après une mise à jour du code :
    `docker compose build`.
 
-Sur un **NAS Synology**, suivez le guide [synology/README.md](synology/README.md) : installation avec
-Container Manager et alertes automatiques par e-mail via le Planificateur de tâches.
+Sur un **NAS Synology**, suivez le guide [synology/README.md](synology/README.md) : vous déposez vos
+relevés dans Synology Drive depuis n'importe quel appareil, le NAS les analyse chaque jour, écrit un
+rapport dans le même dossier Drive et vous envoie un e-mail en cas de nouvelle alerte.
 
 Pour essayer sans vos données, avec les relevés d'exemple intégrés à l'image :
 
@@ -67,6 +68,9 @@ au lancement, jamais copiés dans l'image (voir `.dockerignore`), et `donnees/` 
 python3 -m assistant_financier            # lit le dossier releves/
 python3 -m assistant_financier mes_releves/2026/
 ```
+
+Les sous-dossiers sont lus aussi (`releves/2025/`, `releves/2026/`…). Un fichier qui n'est pas un relevé
+(PDF, note…) est signalé et ignoré, sans bloquer l'analyse des autres.
 
 Options utiles (identiques avec Docker) :
 
