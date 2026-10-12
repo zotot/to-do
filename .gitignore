@@ -1,0 +1,6 @@
+__pycache__/
+*.pyc
+# Vos vrais relevés ne doivent pas être commités
+releves/
+*.ofx
+!tests/**/*.ofx
