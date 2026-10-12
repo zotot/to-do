@@ -45,6 +45,9 @@ def _barre(taux: float, largeur: int = 12) -> str:
 
 
 JOURS_HAUSSE_RECENTE = 62
+# Code de sortie de --alertes quand il y a une alerte à traiter (découvert prévu ou hausse récente) :
+# permet à un planificateur (cron, DSM…) de n'envoyer un e-mail que dans ce cas.
+CODE_ALERTE = 3
 
 
 def afficher_hausses(recurrences, fin_releves: date) -> None:
@@ -175,6 +178,10 @@ def main(argv: list[str] | None = None) -> int:
         "--decouvert-autorise", type=float, default=0.0, metavar="MONTANT",
         help="montant de votre découvert autorisé, pour signaler un risque de rejet de prélèvement",
     )
+    parser.epilog = (
+        f"Avec --alertes, le code de sortie vaut {CODE_ALERTE} s'il y a un découvert prévu "
+        f"ou une hausse d'abonnement de moins de {JOURS_HAUSSE_RECENTE} jours, 0 sinon."
+    )
     parser.add_argument(
         "--sans-depenses-courantes", action="store_true",
         help="projeter le solde avec les seuls prélèvements récurrents (sans courses, essence…)",
@@ -210,7 +217,11 @@ def main(argv: list[str] | None = None) -> int:
         elif projection and not projection[1]:
             bas = min(projection[0], key=lambda p: p.solde)
             print(f"Pas de découvert prévu d'ici le {au:%d/%m/%Y} (point le plus bas : {euros(bas.solde)} le {bas.date:%d/%m/%Y}).")
-        return 0
+        hausses_recentes = [
+            h for h in detecter_hausses(recurrences) if (fin_releves - h.depuis).days <= JOURS_HAUSSE_RECENTE
+        ]
+        decouvert = projection[1] if projection else None
+        return CODE_ALERTE if hausses_recentes or decouvert else 0
 
     print("=== Opérations récurrentes détectées ===")
     if not recurrences:

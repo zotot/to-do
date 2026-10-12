@@ -77,11 +77,22 @@ class TestDepensesCourantes(unittest.TestCase):
 
 
 class TestLigneDeCommande(unittest.TestCase):
-    def lancer(self, *args):
+    def lancer(self, *args, code_attendu=None):
         sortie = io.StringIO()
         with redirect_stdout(sortie):
-            main([str(EXEMPLES), *args])
+            code = main([str(EXEMPLES), *args])
+        if code_attendu is not None:
+            self.assertEqual(code, code_attendu)
         return sortie.getvalue()
+
+    def test_code_de_sortie_des_alertes(self):
+        self.lancer("--alertes", "--solde", "500", "--du", "02/07/2026", code_attendu=3)  # découvert
+        self.lancer("--alertes", "--solde", "3000", code_attendu=3)  # hausses récentes (Netflix, Free)
+        # Relevé du 1er trimestre seul : ni hausse ni découvert.
+        sortie = io.StringIO()
+        with redirect_stdout(sortie):
+            code = main([str(EXEMPLES / "releve_2026_T1.csv"), "--alertes", "--solde", "3000"])
+        self.assertEqual(code, 0)
 
     def test_alerte_affichee(self):
         texte = self.lancer("--alertes", "--solde", "500", "--du", "02/07/2026", "--decouvert-autorise", "400")

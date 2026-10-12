@@ -41,6 +41,9 @@ Fonctionne avec **Docker** (recommandé) ou directement avec Python 3.10+, sans 
    La première commande construit l'image (environ 175 Mo). Après une mise à jour du code :
    `docker compose build`.
 
+Sur un **NAS Synology**, suivez le guide [synology/README.md](synology/README.md) : installation avec
+Container Manager et alertes automatiques par e-mail via le Planificateur de tâches.
+
 Pour essayer sans vos données, avec les relevés d'exemple intégrés à l'image :
 
 ```bash
@@ -79,7 +82,7 @@ Options utiles (identiques avec Docker) :
 | `--budget` | affiche les dépenses du mois par catégorie, comparées à votre budget |
 | `--mois 05/2026` | mois analysé par `--budget` (par défaut : mois du dernier relevé) |
 | `--creer-budget` | crée `budget.json` à partir de vos dépenses moyennes |
-| `--alertes` | n'affiche que les alertes (hausses d'abonnements, découvert prévu) |
+| `--alertes` | n'affiche que les alertes (hausses d'abonnements, découvert prévu) ; code de sortie 3 s'il y a une alerte à traiter |
 | `--config mon_budget.json` | utilise un autre fichier de budget que `budget.json` |
 
 Exemple avec les relevés fournis dans `exemples/` :

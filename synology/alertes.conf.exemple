@@ -1,0 +1,6 @@
+# Copiez ce fichier dans donnees/alertes.conf et adaptez-le.
+# Mettez le solde à jour à chaque dépôt d'un nouveau relevé : c'est le solde à la date
+# de la dernière opération du relevé (il figure en bas du relevé).
+SOLDE=1520,40
+# Montant de votre découvert autorisé (0 si aucun)
+DECOUVERT_AUTORISE=300
