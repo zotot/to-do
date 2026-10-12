@@ -8,6 +8,7 @@ Exemples :
     python -m assistant_financier releves/ --budget --mois 05/2026
     python -m assistant_financier releves/ --creer-budget
     python -m assistant_financier releves/ --alertes
+    python -m assistant_financier releves/ --alertes --solde 1520.40 --decouvert-autorise 300
 """
 
 from __future__ import annotations
@@ -23,6 +24,7 @@ from .analyse import detecter_recurrences, montant_prevu, prevoir
 from .budget import RapportBudget, charger_config, ecrire_config, rapport_mensuel, suggerer_budget
 from .categories import Categoriseur
 from .import_releves import charger_releves, parser_date
+from .solde import LIBELLE_COURANT, LIBELLE_DEPART, Decouvert, depenses_courantes_par_jour, detecter_decouvert, projeter_solde
 
 EXTENSIONS = {".csv", ".txt", ".tsv", ".ofx", ".qfx"}
 JOURS_SEMAINE = ["lun.", "mar.", "mer.", "jeu.", "ven.", "sam.", "dim."]
@@ -60,6 +62,34 @@ def afficher_hausses(recurrences, fin_releves: date) -> None:
     if len(hausses) > 1:
         print(f"  Surcoût total : {euros(total)} par an")
     print()
+
+
+def afficher_decouvert(d: Decouvert, solde: float, fin_releves: date, courant: float, autorise: float) -> None:
+    print("=== ⚠ Alerte : découvert prévu ===")
+    jour = f"{JOURS_SEMAINE[d.date.weekday()]} {d.date:%d/%m/%Y}"
+    if d.cause == LIBELLE_DEPART:
+        print(f"  Le compte est déjà à découvert : {euros(d.solde)}.")
+    elif d.cause == LIBELLE_COURANT:
+        print(f"  Le {jour}, vos dépenses courantes feraient passer le compte à {euros(d.solde)}.")
+    else:
+        print(f"  Le {jour}, {d.cause} ({euros(d.montant_cause)}) ferait passer le compte à {euros(d.solde)}.")
+    print(f"  Point le plus bas : {euros(d.plus_bas)} le {d.date_plus_bas:%d/%m/%Y}.")
+    if d.depassement_autorise:
+        print(
+            f"  ⚠ Au-delà de votre découvert autorisé ({euros(autorise, False)}) dès le {d.depassement_autorise:%d/%m/%Y} :"
+            " risque de rejet de prélèvement et de frais."
+        )
+    elif autorise:
+        print(f"  Reste dans votre découvert autorisé ({euros(autorise, False)}), mais des agios s'appliquent.")
+    avant = "dès que possible" if d.cause == LIBELLE_DEPART else f"avant le {d.date:%d/%m/%Y}"
+    print(f"  → Versez au moins {euros(d.a_approvisionner, False)} sur le compte {avant}.")
+    _note_projection(solde, fin_releves, courant)
+    print()
+
+
+def _note_projection(solde: float, fin_releves: date, courant: float) -> None:
+    courant_txt = f" et dépenses courantes estimées à {euros(courant, False)}/jour" if courant else ""
+    print(f"  (projection : solde de {euros(solde)} au {fin_releves:%d/%m/%Y}, prélèvements récurrents prévus{courant_txt})")
 
 
 def afficher_budget(r: RapportBudget, fin_releves: date, budget_suggere: bool, chemin_config: Path) -> None:
@@ -132,7 +162,15 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--mois", help="mois du budget (MM/AAAA). Défaut : mois du dernier relevé")
     parser.add_argument("--config", default="budget.json", help="fichier de budget et de catégories (défaut : budget.json)")
     parser.add_argument("--creer-budget", action="store_true", help="créer le fichier de budget à partir de vos moyennes")
-    parser.add_argument("--alertes", action="store_true", help="n'afficher que les alertes (hausses d'abonnements)")
+    parser.add_argument("--alertes", action="store_true", help="n'afficher que les alertes (hausses, découvert)")
+    parser.add_argument(
+        "--decouvert-autorise", type=float, default=0.0, metavar="MONTANT",
+        help="montant de votre découvert autorisé, pour signaler un risque de rejet de prélèvement",
+    )
+    parser.add_argument(
+        "--sans-depenses-courantes", action="store_true",
+        help="projeter le solde avec les seuls prélèvements récurrents (sans courses, essence…)",
+    )
     args = parser.parse_args(argv)
 
     transactions = charger_releves(_fichiers(args.releves))
@@ -145,16 +183,25 @@ def main(argv: list[str] | None = None) -> int:
     if args.budget or args.creer_budget:
         return _budget(args, transactions)
 
-    toutes = detecter_recurrences(transactions, fin_releves)
-    if args.debits:
-        toutes = [r for r in toutes if r.montant_moyen < 0]
+    detectees = detecter_recurrences(transactions, fin_releves)
+    toutes = [r for r in detectees if r.montant_moyen < 0] if args.debits else detectees
     recurrences = [r for r in toutes if r.active]
     arretees = [r for r in toutes if not r.active]
+
+    du = parser_date(args.du) if args.du else fin_releves + timedelta(days=1)
+    au = du + timedelta(days=args.jours - 1)
+    # Le solde se projette avec toutes les opérations, rentrées comprises, même avec --debits.
+    projection = _projection(args, transactions, detectees, du, au)
 
     afficher_hausses(recurrences, fin_releves)
     if args.alertes:
         if not detecter_hausses(recurrences):
             print("Aucune hausse d'abonnement détectée.")
+        if args.solde is None:
+            print("Indiquez votre solde (--solde) pour vérifier le risque de découvert.")
+        elif projection and not projection[1]:
+            bas = min(projection[0], key=lambda p: p.solde)
+            print(f"Pas de découvert prévu d'ici le {au:%d/%m/%Y} (point le plus bas : {euros(bas.solde)} le {bas.date:%d/%m/%Y}).")
         return 0
 
     print("=== Opérations récurrentes détectées ===")
@@ -179,20 +226,18 @@ def main(argv: list[str] | None = None) -> int:
             print(f"  {r.cle[:32]:<32} {euros(r.montant_dernier):>14}   {r.frequence:<13} dernière fois le {r.derniere_date:%d/%m/%Y}")
         print()
 
-    du = parser_date(args.du) if args.du else fin_releves + timedelta(days=1)
-    au = du + timedelta(days=args.jours - 1)
     previsions = prevoir(recurrences, du, au)
+    soldes = {p.prevision: p.solde for p in projection[0] if p.prevision} if projection else {}
 
     print(f"=== Échéances prévues du {du:%d/%m/%Y} au {au:%d/%m/%Y} ===")
     if not previsions:
         print("  Aucune échéance prévue sur cette période.")
-    solde = args.solde
     for p in previsions:
         ligne = f"  {JOURS_SEMAINE[p.date.weekday()]} {p.date:%d/%m/%Y}  {p.libelle[:32]:<32} {euros(p.montant):>14}"
         if p.montant_variable:
             ligne += " ~"
-        if solde is not None:
-            solde += p.montant
+        if p in soldes:
+            solde = soldes[p]
             ligne += f"   solde prévu : {euros(solde)}" + ("  ⚠ découvert" if solde < 0 else "")
         print(ligne)
     total_debits = sum(p.montant for p in previsions if p.montant < 0)
@@ -200,6 +245,11 @@ def main(argv: list[str] | None = None) -> int:
     print(f"\n  Total prélèvements attendus : {euros(total_debits)}")
     if total_credits:
         print(f"  Total rentrées attendues    : {euros(total_credits)}")
+    if projection:
+        points = projection[0]
+        bas = min(points, key=lambda p: p.solde)
+        print(f"  Solde prévu au {au:%d/%m/%Y}     : {euros(points[-1].solde)} (point le plus bas : {euros(bas.solde)} le {bas.date:%d/%m/%Y})")
+        _note_projection(args.solde, du - timedelta(days=1), projection[2])
     print("  (~ = montant variable, estimé sur les 3 dernières échéances)")
     if fin_releves < date.today() - timedelta(days=45):
         print(f"\n  Note : le dernier relevé date du {fin_releves:%d/%m/%Y}, pensez à ajouter les plus récents.")
@@ -215,6 +265,19 @@ def main(argv: list[str] | None = None) -> int:
                 ])
         print(f"\nPrévisions exportées dans {args.export}")
     return 0
+
+
+def _projection(args: argparse.Namespace, transactions, recurrences, du: date, au: date):
+    """Projette le solde et affiche l'alerte de découvert. Renvoie (points, découvert, dépenses/jour) ou None."""
+    if args.solde is None:
+        return None
+    actives = [r for r in recurrences if r.active]
+    courant = 0.0 if args.sans_depenses_courantes else depenses_courantes_par_jour(transactions, recurrences)
+    points = projeter_solde(args.solde, du, au, prevoir(actives, du, au), courant)
+    decouvert = detecter_decouvert(points, args.decouvert_autorise)
+    if decouvert:
+        afficher_decouvert(decouvert, args.solde, du - timedelta(days=1), courant, args.decouvert_autorise)
+    return points, decouvert, courant
 
 
 def _budget(args: argparse.Namespace, transactions) -> int:
@@ -251,8 +314,11 @@ def _budget(args: argparse.Namespace, transactions) -> int:
     budget_suggere = not budget
     if budget_suggere:
         budget = suggerer_budget(transactions, categoriseur)
-    recurrences = [r for r in detecter_recurrences(transactions, fin_releves) if r.active]
-    previsions = prevoir(recurrences, fin_releves + timedelta(days=1), fin_releves + timedelta(days=31))
+    detectees = detecter_recurrences(transactions, fin_releves)
+    recurrences = [r for r in detectees if r.active]
+    du = fin_releves + timedelta(days=1)
+    _projection(args, transactions, detectees, du, du + timedelta(days=args.jours - 1))
+    previsions = prevoir(recurrences, du, fin_releves + timedelta(days=31))
     rapport = rapport_mensuel(transactions, mois, categoriseur, budget, previsions)
     afficher_budget(rapport, fin_releves, budget_suggere, chemin)
     print()

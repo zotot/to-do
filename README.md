@@ -24,14 +24,16 @@ Options utiles :
 | Option | Effet |
 |---|---|
 | `--jours 60` | prévoit sur 60 jours (31 par défaut) |
-| `--solde 1520.40` | projette votre solde après chaque échéance et signale un découvert |
+| `--solde 1520.40` | votre solde à la date du dernier relevé : projette le solde et alerte en cas de découvert prévu |
+| `--decouvert-autorise 300` | votre découvert autorisé, pour signaler un risque de rejet de prélèvement |
+| `--sans-depenses-courantes` | projette le solde avec les seuls prélèvements récurrents |
 | `--du 01/11/2026` | début de la prévision (par défaut : lendemain du dernier relevé) |
 | `--debits` | n'affiche que les sorties d'argent |
 | `--export previsions.csv` | exporte les échéances prévues (s'ouvre dans Excel) |
 | `--budget` | affiche les dépenses du mois par catégorie, comparées à votre budget |
 | `--mois 05/2026` | mois analysé par `--budget` (par défaut : mois du dernier relevé) |
 | `--creer-budget` | crée `budget.json` à partir de vos dépenses moyennes |
-| `--alertes` | n'affiche que les alertes de hausse d'abonnement |
+| `--alertes` | n'affiche que les alertes (hausses d'abonnements, découvert prévu) |
 | `--config mon_budget.json` | utilise un autre fichier de budget que `budget.json` |
 
 Exemple avec les relevés fournis dans `exemples/` :
@@ -70,6 +72,30 @@ Quand un prélèvement à montant fixe change de tarif, l'assistant le signale e
 - Ne déclenchent pas d'alerte : les écarts de moins de 1 % (conversion de devise), les factures
   à montant variable (électricité…), les baisses, les hausses de revenus et les abonnements résiliés.
 - Pour vérifier seulement les alertes : `python3 -m assistant_financier releves/ --alertes`.
+
+## Alerte : découvert prévu
+
+Indiquez votre solde (`--solde`, à la date du dernier relevé) : l'assistant simule votre compte jour
+par jour et vous prévient si un prélèvement va le faire passer à découvert.
+
+```
+$ python3 -m assistant_financier releves/ --alertes --solde 500 --decouvert-autorise 400
+
+=== ⚠ Alerte : découvert prévu ===
+  Le dim. 05/07/2026, LOYER IMMO GESTION (-780,00 €) ferait passer le compte à -337,32 €.
+  Point le plus bas : -1 214,76 € le 01/08/2026.
+  ⚠ Au-delà de votre découvert autorisé (400,00 €) dès le 08/07/2026 : risque de rejet de prélèvement et de frais.
+  → Versez au moins 1 214,76 € sur le compte avant le 05/07/2026.
+  (projection : solde de +500,00 € au 01/07/2026, prélèvements récurrents prévus et dépenses courantes estimées à 14,33 €/jour)
+```
+
+- La simulation compte les **prélèvements et rentrées récurrents** prévus, plus vos **dépenses
+  courantes** (courses, essence, sorties…), estimées d'après la médiane des mois précédents,
+  pour qu'un gros achat ponctuel ne fausse pas l'estimation. `--sans-depenses-courantes` les retire.
+- Le même jour, les débits passent avant les crédits : si le loyer et le salaire tombent le 1er,
+  l'alerte vous prévient quand même (votre banque peut traiter le loyer en premier).
+- Sans découvert prévu, `--alertes` indique le point le plus bas du solde sur la période (`--jours`).
+- Le rapport habituel affiche aussi le solde prévu après chaque échéance.
 
 ## Budget mensuel par catégorie
 
@@ -150,5 +176,6 @@ python3 -m unittest discover -s tests
 ## Pistes pour la suite
 
 - Lecture des relevés **PDF** (dépend de la mise en page de chaque banque).
-- Autres alertes : prélèvement inconnu, facture variable anormalement élevée, découvert prévu.
+- Autres alertes : prélèvement inconnu, facture variable anormalement élevée.
+- Lire le solde directement dans les relevés OFX (balise `LEDGERBAL`).
 - Interface web ou tableau de bord.
