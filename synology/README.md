@@ -115,9 +115,9 @@ n'importe quel navigateur avec le paquet **Éditeur de texte** de DSM.
 
 ## 6. Mettre à jour l'assistant
 
-Remplacez le contenu de `/docker/assistant-financier` par la nouvelle version, puis reconstruisez
-l'image : **Container Manager → Projet → assistant-financier → Action → Construire**.
-Votre dossier Drive n'est pas concerné.
+Remplacez le contenu de `/docker/assistant-financier` par la nouvelle version : c'est tout. Au passage
+suivant, le script voit que le code a changé et reconstruit l'image de lui-même (la version utilisée
+figure en tête de `rapport.txt`). Votre dossier Drive n'est pas concerné.
 
 ## Pour aller plus loin : commandes en SSH
 

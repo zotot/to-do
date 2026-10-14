@@ -43,8 +43,16 @@ DECOUVERT=$(reglage DECOUVERT_AUTORISE)
 [ -n "$SOLDE" ] && set -- "$@" "--solde=$SOLDE"
 [ -n "$DECOUVERT" ] && set -- "$@" "--decouvert-autorise=$DECOUVERT"
 
-if ! docker image inspect "$IMAGE" >/dev/null 2>&1; then
-    docker build -q -t "$IMAGE" "$DOSSIER" >/dev/null || { echo "Échec de la construction de l'image."; exit 1; }
+# Image à (re)construire si elle manque ou si le code a changé (nouvelle version déposée) :
+# l'empreinte du code est inscrite dans l'image et comparée à chaque passage.
+VERSION=$(cd "$DOSSIER" && find Dockerfile requirements.txt assistant_financier -type f ! -name '*.pyc' \
+    -exec md5sum {} + | sort -k 2 | md5sum | cut -c1-12)
+if [ "$(docker image inspect -f '{{ index .Config.Labels "assistant.version" }}' "$IMAGE" 2>/dev/null)" != "$VERSION" ]; then
+    if ! JOURNAL=$(docker build -q --label "assistant.version=$VERSION" -t "$IMAGE" "$DOSSIER" 2>&1); then
+        echo "Échec de la construction de l'image :"
+        echo "$JOURNAL" | tail -n 20
+        exit 1
+    fi
 fi
 
 # Le conteneur lit et écrit avec le propriétaire du dossier de données (et non root).
@@ -70,7 +78,7 @@ fi
 # 1. Rapport complet, lisible depuis Synology Drive.
 TEMPORAIRE="$DONNEES/.rapport.tmp"
 {
-    echo "Rapport de l'assistant financier, généré le $(date '+%d/%m/%Y à %H:%M')"
+    echo "Rapport de l'assistant financier, généré le $(date '+%d/%m/%Y à %H:%M') (version $VERSION)"
     if [ -n "$SOLDE" ]; then
         echo "Solde imposé dans alertes.conf : $SOLDE € (retirez-le pour utiliser celui des relevés)"
     fi

@@ -69,6 +69,21 @@ class TestDossierDrive(unittest.TestCase):
         self.assertEqual(trouves, ["2026/releve_T1.csv", "releve_T2.csv"])
         self.assertEqual(ignores, ["releves.xlsx"])
 
+    def test_dossier_sans_releve_explique_pourquoi(self):
+        from assistant_financier.cli import _fichiers
+
+        with tempfile.TemporaryDirectory() as d:
+            with self.assertRaises(SystemExit) as vide:
+                _fichiers([d])
+            (Path(d) / "releves.xlsx").write_text("x")
+            (Path(d) / ".~lock.releve.pdf#").write_text("x")
+            with self.assertRaises(SystemExit) as autre_format:
+                _fichiers([d])
+        self.assertIn("formats acceptés : PDF, CSV, OFX", str(vide.exception))
+        self.assertIn("Le dossier est vide", str(vide.exception))
+        self.assertIn("d'un autre format : releves.xlsx", str(autre_format.exception))
+        self.assertIn("cachés ou temporaires ignorés : .~lock.releve.pdf#", str(autre_format.exception))
+
     def test_fichier_illisible_ignore(self):
         with tempfile.TemporaryDirectory() as d:
             note = Path(d) / "note.txt"

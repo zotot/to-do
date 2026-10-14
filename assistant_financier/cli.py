@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import argparse
 import csv
+import os
 import sys
 from datetime import date, timedelta
 from pathlib import Path
@@ -140,40 +141,79 @@ def afficher_budget(r: RapportBudget, fin_releves: date, budget_suggere: bool, c
 DOSSIERS_IGNORES = {"@eaDir", "#recycle", "#snapshot", "#SynoRecycle", "@tmp"}
 
 
-def _est_ignore(chemin: Path, racine: Path) -> bool:
-    return any(
-        partie in DOSSIERS_IGNORES or partie.startswith((".", "~"))
-        for partie in chemin.relative_to(racine).parts
-    )
+FORMATS = "PDF, CSV, OFX"
+
+
+def _est_ignore(nom: str) -> bool:
+    return nom in DOSSIERS_IGNORES or nom.startswith((".", "~"))
+
+
+def _parcourir(racine: Path, illisibles: list[str], caches: list[str]) -> list[Path]:
+    """Fichiers d'un dossier et de ses sous-dossiers, sans les dossiers techniques ni les fichiers cachés.
+
+    Les dossiers qu'on ne peut pas ouvrir (droits d'accès) sont ajoutés à `illisibles` au lieu
+    d'être sautés en silence.
+    """
+    trouves = []
+
+    def erreur(e: OSError) -> None:
+        illisibles.append(str(Path(e.filename).relative_to(racine)) if e.filename != str(racine) else ".")
+
+    for dossier, sous_dossiers, noms in os.walk(racine, onerror=erreur):
+        sous_dossiers[:] = sorted(d for d in sous_dossiers if not _est_ignore(d))
+        for nom in sorted(noms):
+            chemin = Path(dossier) / nom
+            if _est_ignore(nom):
+                caches.append(str(chemin.relative_to(racine)))
+            else:
+                trouves.append(chemin)
+    return sorted(trouves)
 
 
 def _fichiers(entrees: list[str], ignores: list[str] | None = None) -> list[Path]:
     """Relevés à lire : fichiers donnés, ou contenu des dossiers (sous-dossiers compris).
 
-    Les fichiers d'un format non pris en charge (PDF, Excel…) sont ajoutés à `ignores`.
+    Les fichiers d'un format non pris en charge (Excel, image…) sont ajoutés à `ignores`.
+    Si aucun relevé n'est trouvé, le message dit ce que contient le dossier, pour comprendre pourquoi.
     """
-    fichiers = []
+    fichiers: list[Path] = []
+    non_pris_en_charge: list[str] = []
+    illisibles: list[str] = []
+    caches: list[str] = []
     for e in entrees:
         p = Path(e)
         if p.is_dir():
-            for f in sorted(p.rglob("*")):
-                if not f.is_file() or _est_ignore(f, p):
-                    continue
+            for f in _parcourir(p, illisibles, caches):
                 if f.suffix.lower() in EXTENSIONS:
                     fichiers.append(f)
-                elif ignores is not None:
-                    ignores.append(str(f.relative_to(p)))
+                else:
+                    non_pris_en_charge.append(str(f.relative_to(p)))
         elif p.exists():
             fichiers.append(p)
         elif entrees == ["releves"]:
             raise SystemExit(
-                "Aucun dossier releves/ ici : placez-y vos relevés CSV/OFX, ou indiquez leur chemin "
+                f"Aucun dossier releves/ ici : placez-y vos relevés ({FORMATS}), ou indiquez leur chemin "
                 "en argument."
             )
         else:
             raise SystemExit(f"Fichier introuvable : {e}")
+    if ignores is not None:
+        ignores.extend(non_pris_en_charge)
+    if illisibles:
+        print(f"⚠ Dossier(s) impossible(s) à ouvrir (droits d'accès) : {', '.join(illisibles)}")
     if not fichiers:
-        raise SystemExit("Aucun relevé trouvé (formats acceptés : CSV, OFX).")
+        lieu = ", ".join(f"{e}/" if Path(e).is_dir() else e for e in entrees)
+        details = [f"Aucun relevé trouvé dans {lieu} (formats acceptés : {FORMATS})."]
+        if non_pris_en_charge:
+            details.append(f"  Fichiers présents mais d'un autre format : {', '.join(non_pris_en_charge[:10])}"
+                           + (" …" if len(non_pris_en_charge) > 10 else ""))
+        if caches:
+            details.append(f"  Fichiers cachés ou temporaires ignorés : {', '.join(caches[:10])}")
+        if illisibles:
+            details.append("  Certains dossiers n'ont pas pu être ouverts : vérifiez leurs droits d'accès.")
+        if not (non_pris_en_charge or caches or illisibles):
+            details.append("  Le dossier est vide : déposez vos relevés directement dedans (ou dans un sous-dossier).")
+        raise SystemExit("\n".join(details))
     return fichiers
 
 
@@ -222,7 +262,7 @@ def main(argv: list[str] | None = None) -> int:
     if args.diagnostic:
         return _diagnostic(args, chemins, erreurs, infos)
     if ignores:
-        print(f"Fichiers ignorés (formats acceptés : PDF, CSV, OFX) : {', '.join(ignores)}")
+        print(f"Fichiers ignorés (formats acceptés : {FORMATS}) : {', '.join(ignores)}")
     for erreur in erreurs:
         print(f"Fichier illisible, ignoré : {erreur}")
     if ignores or erreurs:
