@@ -4,7 +4,10 @@ Analyse vos relevés de compte, repère les opérations qui reviennent (abonneme
 loyer, crédit, factures, salaire…) à partir de leur **date** et de leur **libellé**,
 puis **anticipe les prochains prélèvements**.
 
-Fonctionne avec **Docker** (recommandé) ou directement avec Python 3.10+, sans dépendance à installer.
+Lit vos relevés **PDF** (tels que la banque les envoie), **CSV** ou **OFX**.
+
+Fonctionne avec **Docker** (recommandé) ou directement avec Python 3.10+
+(`pip install -r requirements.txt` pour la lecture des PDF).
 
 ## Avec Docker
 
@@ -12,7 +15,7 @@ Fonctionne avec **Docker** (recommandé) ou directement avec Python 3.10+, sans 
 
    ```
    donnees/
-   ├── releves/        ← vos relevés CSV/OFX
+   ├── releves/        ← vos relevés PDF, CSV ou OFX
    └── budget.json     ← créé par --creer-budget (facultatif)
    ```
 
@@ -32,10 +35,10 @@ Fonctionne avec **Docker** (recommandé) ou directement avec Python 3.10+, sans 
 
    ```bash
    docker compose run --rm assistant                          # récurrences et prochaines échéances
-   docker compose run --rm assistant --alertes --solde 1520.40
+   docker compose run --rm assistant --alertes
    docker compose run --rm assistant --creer-budget
    docker compose run --rm assistant --budget
-   docker compose run --rm assistant --solde 1520.40 --export previsions.csv   # écrit dans donnees/
+   docker compose run --rm assistant --export previsions.csv   # écrit dans donnees/
    ```
 
    La première commande construit l'image (environ 175 Mo). Après une mise à jour du code :
@@ -57,9 +60,9 @@ au lancement, jamais copiés dans l'image (voir `.dockerignore`), et `donnees/` 
 
 ## Utilisation
 
-1. Exportez vos relevés depuis l'espace client de votre banque au format **CSV** ou **OFX**
-   (souvent « Télécharger mes opérations »). Plus il y a de mois, meilleure est la détection :
-   3 mois minimum, 12 pour repérer les échéances annuelles.
+1. Récupérez vos relevés depuis l'espace client de votre banque : les **relevés PDF** mensuels,
+   ou un export **CSV**/**OFX** (souvent « Télécharger mes opérations »). Plus il y a de mois,
+   meilleure est la détection : 3 mois minimum, 12 pour repérer les échéances annuelles.
 2. Mettez-les dans un dossier `releves/` (lu par défaut, sinon indiquez le chemin). Les relevés qui se chevauchent ne posent pas de problème :
    les doublons sont supprimés.
 3. Lancez :
@@ -70,14 +73,36 @@ python3 -m assistant_financier mes_releves/2026/
 ```
 
 Les sous-dossiers sont lus aussi (`releves/2025/`, `releves/2026/`…). Un fichier qui n'est pas un relevé
-(PDF, note…) est signalé et ignoré, sans bloquer l'analyse des autres.
+(facture PDF, note, fichier Excel…) est signalé et ignoré, sans bloquer l'analyse des autres.
+
+### Relevés PDF
+
+L'assistant reconstitue le tableau des opérations à partir de la position du texte dans le PDF :
+colonnes **Date / Libellé / Débit / Crédit** (avec ou sans date de valeur) ou une colonne **Montant**
+signée, libellés sur plusieurs lignes, dates avec ou sans l'année, relevés sur plusieurs pages.
+
+Chaque relevé est **contrôlé** : ancien solde + crédits − débits doit redonner le nouveau solde
+(pour un relevé qui n'indique que le solde final, on reprend celui du relevé précédent).
+
+```
+84 opérations lues du 01/01/2026 au 23/06/2026.
+Contrôle des soldes : 6/6 relevé(s) vérifié(s) ✓.
+Solde lu dans releve_2026_06.pdf : +5 716,41 € au 30/06/2026.
+```
+
+En cas d'écart, le relevé concerné est signalé (« ⚠ … le relevé a peut-être été mal lu ») : la
+mise en page de votre banque nécessite alors un ajustement. Le **solde** est lu dans le dernier
+relevé (PDF ou OFX) : `--solde` n'est utile qu'avec des CSV, ou pour forcer une autre valeur.
+
+Non pris en charge : les relevés **scannés** (images sans texte) et les PDF protégés par mot de passe
+(enregistrez-les sans mot de passe).
 
 Options utiles (identiques avec Docker) :
 
 | Option | Effet |
 |---|---|
 | `--jours 60` | prévoit sur 60 jours (31 par défaut) |
-| `--solde 1520.40` | votre solde à la date du dernier relevé : projette le solde et alerte en cas de découvert prévu |
+| `--solde 1520.40` | votre solde à la date du dernier relevé (lu automatiquement dans les PDF/OFX) : projette le solde et alerte en cas de découvert prévu |
 | `--decouvert-autorise 300` | votre découvert autorisé, pour signaler un risque de rejet de prélèvement |
 | `--sans-depenses-courantes` | projette le solde avec les seuls prélèvements récurrents |
 | `--du 01/11/2026` | début de la prévision (par défaut : lendemain du dernier relevé) |
@@ -205,7 +230,10 @@ d'après les mots-clés de son libellé.
 
 ## Comment ça marche
 
-- **Import** (`import_releves.py`) : reconnaît automatiquement le séparateur (`;` `,` tabulation),
+- **Import PDF** (`pdf.py`) : regroupe le texte par ligne selon sa position, repère l'en-tête du
+  tableau et la position des colonnes Débit/Crédit, rattache les suites de libellé, lit les soldes
+  et vérifie qu'ils concordent avec les opérations.
+- **Import CSV/OFX** (`import_releves.py`) : reconnaît automatiquement le séparateur (`;` `,` tabulation),
   l'encodage (UTF-8 ou Windows), les montants à la française (`-1 234,56 €`), une colonne
   montant unique ou des colonnes débit/crédit séparées, et ignore les lignes d'en-tête que
   certaines banques ajoutent (n° de compte, solde…).
@@ -222,15 +250,17 @@ d'après les mots-clés de son libellé.
 
 ## Tests
 
+Les relevés PDF d'exemple (`exemples/pdf/`) reprennent les opérations des CSV d'exemple, sous deux
+mises en page courantes ; `exemples/generer_pdf.py` les régénère.
+
 ```bash
+pip install -r requirements.txt reportlab   # reportlab : fabrique les PDF de certains tests
 python3 -m unittest discover -s tests
-# ou dans le conteneur :
+# ou dans le conteneur (les tests qui fabriquent des PDF sont alors sautés) :
 docker run --rm -v "$PWD/tests:/app/tests:ro" -w /app --entrypoint python assistant-financier -m unittest discover -s tests
 ```
 
 ## Pistes pour la suite
 
-- Lecture des relevés **PDF** (dépend de la mise en page de chaque banque).
 - Autres alertes : prélèvement inconnu, facture variable anormalement élevée.
-- Lire le solde directement dans les relevés OFX (balise `LEDGERBAL`).
 - Interface web ou tableau de bord.

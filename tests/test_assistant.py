@@ -61,13 +61,13 @@ class TestDossierDrive(unittest.TestCase):
         with tempfile.TemporaryDirectory() as d:
             racine = Path(d)
             for chemin in ("2026/releve_T1.csv", "releve_T2.csv", "2026/@eaDir/releve_T1.csv@SynoEAStream",
-                           "#recycle/ancien.csv", ".cache/x.csv", "~$temp.csv", "releve_juin.pdf"):
+                           "#recycle/ancien.csv", ".cache/x.csv", "~$temp.csv", "releves.xlsx"):
                 (racine / chemin).parent.mkdir(parents=True, exist_ok=True)
                 (racine / chemin).write_text("x")
             ignores = []
             trouves = [str(f.relative_to(racine)) for f in _fichiers([d], ignores)]
         self.assertEqual(trouves, ["2026/releve_T1.csv", "releve_T2.csv"])
-        self.assertEqual(ignores, ["releve_juin.pdf"])
+        self.assertEqual(ignores, ["releves.xlsx"])
 
     def test_fichier_illisible_ignore(self):
         with tempfile.TemporaryDirectory() as d:

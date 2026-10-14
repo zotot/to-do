@@ -9,7 +9,7 @@ import unicodedata
 from datetime import date, datetime
 from pathlib import Path
 
-from .modeles import Transaction
+from .modeles import InfoReleve, Transaction
 
 FORMATS_DATE = ("%d/%m/%Y", "%d/%m/%y", "%Y-%m-%d", "%d-%m-%Y", "%d.%m.%Y", "%Y%m%d")
 
@@ -155,29 +155,70 @@ def lire_ofx(chemin: Path) -> list[Transaction]:
     return transactions
 
 
-def charger_releves(chemins: list[Path], erreurs: list[str] | None = None) -> list[Transaction]:
+def lire_ofx_avec_solde(chemin: Path) -> tuple[list[Transaction], InfoReleve]:
+    transactions = lire_ofx(chemin)
+    texte = _lire_texte(chemin)
+    solde = date_solde = None
+    m = re.search(r"<LEDGERBAL>.*?<BALAMT>([^<\r\n]+).*?<DTASOF>(\d{8})", texte, re.S | re.I)
+    if m:
+        solde, date_solde = parser_montant(m.group(1)), parser_date(m.group(2))
+    return transactions, InfoReleve(
+        fichier=chemin.name,
+        debut=min((t.date for t in transactions), default=None),
+        fin=date_solde or max((t.date for t in transactions), default=None),
+        nb_operations=len(transactions),
+        total=round(sum(t.montant for t in transactions), 2),
+        solde_final=solde,
+    )
+
+
+def verifier_releves(infos: list[InfoReleve]) -> None:
+    """Complète l'ancien solde manquant d'un relevé par le solde final du relevé précédent.
+
+    Les relevés qui n'indiquent que le solde final (banques en ligne) deviennent ainsi
+    vérifiables, à condition que les relevés se suivent.
+    """
+    ordonnes = sorted((i for i in infos if i.fin), key=lambda i: i.fin)
+    for precedent, info in zip(ordonnes, ordonnes[1:]):
+        if info.solde_initial is not None or precedent.solde_final is None or not info.debut:
+            continue
+        if 0 <= (info.debut - precedent.fin).days <= 10:
+            info.solde_initial = precedent.solde_final
+
+
+def charger_releves(
+    chemins: list[Path], erreurs: list[str] | None = None, infos: list[InfoReleve] | None = None
+) -> list[Transaction]:
     """Charge plusieurs relevés, supprime les doublons (relevés qui se chevauchent) et trie par date.
 
     Si `erreurs` est fourni, un fichier illisible y est signalé et ignoré au lieu d'interrompre
     le chargement (utile pour un dossier alimenté depuis plusieurs appareils).
+    `infos` reçoit la période et les soldes des relevés qui les indiquent (PDF, OFX).
     """
     vues: set[tuple] = set()
     resultat = []
     for chemin in chemins:
         suffixe = chemin.suffix.lower()
         try:
-            if suffixe in (".ofx", ".qfx"):
-                lues = lire_ofx(chemin)
+            info = None
+            if suffixe == ".pdf":
+                from .pdf import lire_pdf
+
+                lues, info = lire_pdf(chemin)
+            elif suffixe in (".ofx", ".qfx"):
+                lues, info = lire_ofx_avec_solde(chemin)
             elif suffixe in (".csv", ".txt", ".tsv"):
                 lues = lire_csv(chemin)
             else:
-                raise ValueError(f"Format non pris en charge : {chemin.name} (CSV ou OFX attendu)")
+                raise ValueError(f"Format non pris en charge : {chemin.name} (PDF, CSV ou OFX attendu)")
         except (ValueError, OSError) as e:
             if erreurs is None:
                 raise
             message = str(e)
             erreurs.append(message if message.startswith(chemin.name) else f"{chemin.name} : {message}")
             continue
+        if info is not None and infos is not None:
+            infos.append(info)
         # Deux opérations identiques le même jour dans un même relevé sont légitimes :
         # on ne déduplique qu'entre fichiers différents.
         compteur: dict[tuple, int] = {}

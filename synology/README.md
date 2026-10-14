@@ -10,9 +10,9 @@ Vous n'avez besoin d'aucun ordinateur allumé, et rien ne sort du NAS : pas de p
 
 ```
 Synology Drive : Finances/
-├── releves/          ← vous déposez ici vos relevés CSV/OFX (sous-dossiers par année acceptés)
+├── releves/          ← vous déposez ici vos relevés PDF (ou CSV/OFX), sous-dossiers par année acceptés
 ├── rapport.txt       ← écrit par le NAS à chaque passage : à lire depuis Drive
-├── alertes.conf      ← votre solde et votre découvert autorisé (créé au premier passage)
+├── alertes.conf      ← votre découvert autorisé (créé au premier passage)
 └── budget.json       ← votre budget par catégorie (créé au premier passage)
 ```
 
@@ -28,16 +28,17 @@ Synology Drive : Finances/
 
 1. Dans Synology Drive (application ou `https://<votre-nas>/drive`), créez un dossier **`Finances`**
    dans *Mon Drive*, et dedans un dossier **`releves`**.
-2. Déposez-y vos relevés CSV ou OFX, téléchargés depuis l'espace client de votre banque.
-   Vous pouvez les ranger par année (`releves/2025/`, `releves/2026/`) ; les relevés qui se chevauchent
-   ne sont pas comptés deux fois.
+2. Déposez-y vos **relevés PDF**, tels que vous les téléchargez depuis l'espace client de votre banque
+   (un export CSV ou OFX fonctionne aussi). Vous pouvez les ranger par année (`releves/2025/`,
+   `releves/2026/`) ; une opération présente dans deux fichiers n'est comptée qu'une fois.
 3. Notez le **chemin complet** du dossier sur le NAS. Pour *Mon Drive*, c'est en général
    `/volume1/homes/<votre-utilisateur>/Drive/Finances`. Pour le vérifier : File Station → `homes` →
    votre utilisateur → `Drive` → clic droit sur `Finances` → Propriétés (« Emplacement » ; ajoutez
    `/volume1` devant, ou le numéro de votre volume).
 
-Ce que l'assistant ignore sans bloquer : les PDF ou fichiers Excel déposés par erreur et les fichiers
-qui ne sont pas des relevés. Il les signale en tête du rapport. Les dossiers techniques de DSM
+Ce que l'assistant ignore sans bloquer : les fichiers qui ne sont pas des relevés (facture PDF,
+fichier Excel, note…), les relevés scannés et les PDF protégés par mot de passe. Il les signale en tête
+du rapport. Les dossiers techniques de DSM
 (`@eaDir`, `#recycle`) et les fichiers temporaires sont ignorés sans message.
 
 ## 3. Installer l'assistant
@@ -86,17 +87,20 @@ créés au nom du propriétaire du dossier : vous pouvez les ouvrir et les modif
 
 ## 5. Vos réglages, depuis Drive
 
-**`alertes.conf`** : pour activer l'alerte de découvert, retirez le `#` devant les lignes et indiquez
-vos montants :
+**Le solde** est lu automatiquement dans votre dernier relevé PDF : rien à saisir. En haut du rapport,
+vérifiez la ligne de contrôle :
 
 ```
-SOLDE=1520,40
-DECOUVERT_AUTORISE=300
+Contrôle des soldes : 6/6 relevé(s) vérifié(s) ✓.
+Solde lu dans releve_2026_06.pdf : +5 716,41 € au 30/06/2026.
 ```
 
-Le solde est celui **à la date de la dernière opération de vos relevés** (il figure en bas du relevé).
-Mettez-le à jour chaque fois que vous déposez un nouveau relevé. Sans solde, seules les hausses
-d'abonnements sont surveillées.
+Si un relevé est signalé « ⚠ … le relevé a peut-être été mal lu », la mise en page de votre banque
+demande un ajustement de l'assistant : ses chiffres ne sont alors pas fiables.
+
+**`alertes.conf`** : retirez le `#` devant `DECOUVERT_AUTORISE` et indiquez votre découvert autorisé,
+pour être prévenu d'un risque de rejet de prélèvement. `SOLDE` ne sert qu'avec des relevés CSV, qui
+ne contiennent pas le solde.
 
 **`budget.json`** : créé d'après vos dépenses moyennes. Ajustez les montants à vos objectifs et
 ajoutez vos propres mots-clés de catégories (voir le [README principal](../README.md#budget-mensuel-par-catégorie)).
@@ -120,7 +124,7 @@ avec toutes ses options :
 cd /volume1/docker/assistant-financier
 printf "DONNEES=/volume1/homes/$USER/Drive/Finances\nUID=$(id -u)\nGID=$(id -g)\n" > .env
 sudo docker compose run --rm assistant --budget --mois 05/2026
-sudo docker compose run --rm assistant --solde 1520.40 --jours 60
+sudo docker compose run --rm assistant --jours 60
 ```
 
 Si `docker compose` n'est pas reconnu, essayez `docker-compose`.

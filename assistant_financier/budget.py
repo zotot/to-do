@@ -83,11 +83,11 @@ def totaux_par_mois(transactions: list[Transaction], cat: Categoriseur) -> dict[
     return totaux
 
 
-def moyennes_mensuelles(transactions: list[Transaction], cat: Categoriseur) -> dict[str, float]:
+def moyennes_mensuelles(transactions: list[Transaction], cat: Categoriseur, fin: date | None = None) -> dict[str, float]:
     if not transactions:
         return {}
     totaux = totaux_par_mois(transactions, cat)
-    complets = mois_complets(transactions[0].date, transactions[-1].date) or list(totaux)
+    complets = mois_complets(transactions[0].date, fin or transactions[-1].date) or list(totaux)
     sommes: dict[str, float] = defaultdict(float)
     for m in complets:
         for categorie, montant in totaux.get(m, {}).items():
@@ -95,11 +95,11 @@ def moyennes_mensuelles(transactions: list[Transaction], cat: Categoriseur) -> d
     return {c: round(s / len(complets), 2) for c, s in sommes.items()}
 
 
-def suggerer_budget(transactions: list[Transaction], cat: Categoriseur) -> dict[str, float]:
+def suggerer_budget(transactions: list[Transaction], cat: Categoriseur, fin: date | None = None) -> dict[str, float]:
     """Budget de départ : la moyenne de chaque catégorie, arrondie à la dizaine supérieure."""
     return {
         c: float(math.ceil(m / 10) * 10)
-        for c, m in sorted(moyennes_mensuelles(transactions, cat).items(), key=lambda x: -x[1])
+        for c, m in sorted(moyennes_mensuelles(transactions, cat, fin).items(), key=lambda x: -x[1])
         if c != REVENUS and m > 0
     }
 
@@ -110,17 +110,20 @@ def rapport_mensuel(
     cat: Categoriseur,
     budget: dict[str, float] | None = None,
     previsions: list[Prevision] | None = None,
+    fin: date | None = None,
 ) -> RapportBudget:
     """Dépenses du mois par catégorie, comparées à la moyenne et au budget.
 
     Si les relevés s'arrêtent avant la fin du mois, les échéances récurrentes encore attendues
-    (`previsions`) sont ajoutées pour estimer la dépense en fin de mois.
+    (`previsions`) sont ajoutées pour estimer la dépense en fin de mois. `fin` est la date de fin
+    des relevés quand elle est connue (relevé PDF arrêté au 30 alors que la dernière opération
+    date du 23) : elle évite de prendre un mois terminé pour un mois en cours.
     """
-    fin_releves = transactions[-1].date
+    fin_releves = max(fin or transactions[-1].date, transactions[-1].date)
     complet = mois in mois_complets(transactions[0].date, fin_releves)
     du_mois = [t for t in transactions if _mois_de(t.date) == mois]
     totaux = totaux_par_mois(du_mois, cat).get(mois, {})
-    moyennes = moyennes_mensuelles(transactions, cat)
+    moyennes = moyennes_mensuelles(transactions, cat, fin_releves)
     budget = budget or {}
 
     a_venir: dict[str, float] = defaultdict(float)

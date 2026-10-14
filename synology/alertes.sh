@@ -16,7 +16,7 @@
 #     Une alerte identique à la précédente n'est pas renvoyée.
 #
 # Réglages facultatifs dans DOSSIER_DONNEES/alertes.conf :
-#   SOLDE=1520.40               solde du compte à la date du dernier relevé déposé
+#   SOLDE=1520.40               inutile avec des relevés PDF ou OFX (solde lu dans le relevé)
 #   DECOUVERT_AUTORISE=300
 
 PATH=/usr/local/bin:/usr/bin:/bin:$PATH
@@ -57,7 +57,8 @@ assistant() {
 if [ ! -f "$DONNEES/alertes.conf" ]; then
     {
         echo "# Réglages des alertes. Retirez le # devant une ligne pour l'activer."
-        echo "# Solde du compte à la date de la dernière opération du dernier relevé déposé :"
+        echo "# Solde : lu automatiquement dans vos relevés PDF ou OFX. À indiquer seulement si vos"
+        echo "# relevés n'en contiennent pas (CSV) : solde à la date de leur dernière opération."
         echo "# SOLDE=1520,40"
         echo "# Montant de votre découvert autorisé (0 si aucun) :"
         echo "# DECOUVERT_AUTORISE=300"
@@ -71,9 +72,7 @@ TEMPORAIRE="$DONNEES/.rapport.tmp"
 {
     echo "Rapport de l'assistant financier, généré le $(date '+%d/%m/%Y à %H:%M')"
     if [ -n "$SOLDE" ]; then
-        echo "Solde pris en compte : $SOLDE € (à mettre à jour dans alertes.conf à chaque nouveau relevé)"
-    else
-        echo "Pas de solde dans alertes.conf : le risque de découvert n'est pas vérifié."
+        echo "Solde imposé dans alertes.conf : $SOLDE € (retirez-le pour utiliser celui des relevés)"
     fi
     echo
     assistant "$@"

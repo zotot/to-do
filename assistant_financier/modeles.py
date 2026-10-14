@@ -67,3 +67,23 @@ class Hausse:
     @property
     def pourcentage(self) -> float:
         return (self.nouveau - self.ancien) / self.ancien if self.ancien else 0.0
+
+
+@dataclass
+class InfoReleve:
+    """Ce qu'un relevé dit de lui-même (PDF, OFX) : période et soldes, pour contrôler la lecture."""
+
+    fichier: str
+    debut: date | None
+    fin: date | None  # date du solde final (ou de la fin de période)
+    nb_operations: int
+    total: float  # somme des opérations lues (crédits - débits)
+    solde_initial: float | None = None
+    solde_final: float | None = None
+
+    @property
+    def ecart(self) -> float | None:
+        """Écart entre les soldes et les opérations lues : 0 si le relevé a été lu correctement."""
+        if self.solde_initial is None or self.solde_final is None:
+            return None
+        return round(self.solde_initial + self.total - self.solde_final, 2)

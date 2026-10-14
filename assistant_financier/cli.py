@@ -23,10 +23,11 @@ from .alertes import detecter_hausses
 from .analyse import detecter_recurrences, montant_prevu, prevoir
 from .budget import RapportBudget, charger_config, ecrire_config, rapport_mensuel, suggerer_budget
 from .categories import Categoriseur
-from .import_releves import charger_releves, parser_date
+from .modeles import InfoReleve
+from .import_releves import charger_releves, parser_date, verifier_releves
 from .solde import LIBELLE_COURANT, LIBELLE_DEPART, Decouvert, depenses_courantes_par_jour, detecter_decouvert, projeter_solde
 
-EXTENSIONS = {".csv", ".txt", ".tsv", ".ofx", ".qfx"}
+EXTENSIONS = {".csv", ".txt", ".tsv", ".ofx", ".qfx", ".pdf"}
 JOURS_SEMAINE = ["lun.", "mar.", "mer.", "jeu.", "ven.", "sam.", "dim."]
 NOMS_MOIS = [
     "janvier", "février", "mars", "avril", "mai", "juin",
@@ -211,9 +212,10 @@ def main(argv: list[str] | None = None) -> int:
 
     ignores: list[str] = []
     erreurs: list[str] = []
-    transactions = charger_releves(_fichiers(args.releves, ignores), erreurs)
+    infos: list[InfoReleve] = []
+    transactions = charger_releves(_fichiers(args.releves, ignores), erreurs, infos)
     if ignores:
-        print(f"Fichiers ignorés (formats acceptés : CSV, OFX) : {', '.join(ignores)}")
+        print(f"Fichiers ignorés (formats acceptés : PDF, CSV, OFX) : {', '.join(ignores)}")
     for erreur in erreurs:
         print(f"Fichier illisible, ignoré : {erreur}")
     if ignores or erreurs:
@@ -222,7 +224,12 @@ def main(argv: list[str] | None = None) -> int:
         print("Aucune opération lue dans les relevés.")
         return 1
     debut_releves, fin_releves = transactions[0].date, transactions[-1].date
-    print(f"{len(transactions)} opérations lues du {debut_releves:%d/%m/%Y} au {fin_releves:%d/%m/%Y}.\n")
+    print(f"{len(transactions)} opérations lues du {debut_releves:%d/%m/%Y} au {fin_releves:%d/%m/%Y}.")
+    _controler_releves(infos)
+    args.depart = fin_releves  # date à laquelle le solde est connu
+    if args.solde is None:
+        _solde_automatique(args, infos, fin_releves)
+    print()
 
     if args.budget or args.creer_budget:
         return _budget(args, transactions)
@@ -232,7 +239,7 @@ def main(argv: list[str] | None = None) -> int:
     recurrences = [r for r in toutes if r.active]
     arretees = [r for r in toutes if not r.active]
 
-    du = parser_date(args.du) if args.du else fin_releves + timedelta(days=1)
+    du = parser_date(args.du) if args.du else args.depart + timedelta(days=1)
     au = du + timedelta(days=args.jours - 1)
     # Le solde se projette avec toutes les opérations, rentrées comprises, même avec --debits.
     projection = _projection(args, transactions, detectees, du, au)
@@ -315,6 +322,44 @@ def main(argv: list[str] | None = None) -> int:
     return 0
 
 
+def _controler_releves(infos: list[InfoReleve]) -> None:
+    """Affiche le contrôle des soldes des relevés PDF/OFX : un relevé mal lu ne passe pas inaperçu."""
+    if not infos:
+        return
+    verifier_releves(infos)
+    verifies = [i for i in infos if i.ecart == 0]
+    faux = [i for i in infos if i.ecart not in (None, 0)]
+    for i in sorted(faux, key=lambda i: i.fichier):
+        print(
+            f"⚠ {i.fichier} : les opérations lues ne correspondent pas aux soldes du relevé "
+            f"(écart de {euros(i.ecart, False)}). Le relevé a peut-être été mal lu : vérifiez ses opérations."
+        )
+    non_verifiables = len(infos) - len(verifies) - len(faux)
+    resume = f"Contrôle des soldes : {len(verifies)}/{len(infos)} relevé(s) vérifié(s)"
+    if not faux and verifies:
+        resume += " ✓"
+    if non_verifiables:
+        resume += f", {non_verifiables} sans ancien solde à comparer"
+    print(resume + ".")
+
+
+def _solde_automatique(args: argparse.Namespace, infos: list[InfoReleve], fin_releves: date) -> None:
+    """Prend le solde final du relevé le plus récent, s'il couvre bien les dernières opérations."""
+    avec_solde = [i for i in infos if i.solde_final is not None and i.fin]
+    if not avec_solde:
+        return
+    dernier = max(avec_solde, key=lambda i: i.fin)
+    if dernier.fin < fin_releves:
+        print(
+            f"Solde du relevé {dernier.fichier} non utilisé : il date du {dernier.fin:%d/%m/%Y}, "
+            f"avant les dernières opérations (indiquez le solde avec --solde)."
+        )
+        return
+    args.solde = dernier.solde_final
+    args.depart = dernier.fin
+    print(f"Solde lu dans {dernier.fichier} : {euros(dernier.solde_final)} au {dernier.fin:%d/%m/%Y}.")
+
+
 def _projection(args: argparse.Namespace, transactions, recurrences, du: date, au: date):
     """Projette le solde et affiche l'alerte de découvert. Renvoie (points, découvert, dépenses/jour) ou None."""
     if args.solde is None:
@@ -339,7 +384,7 @@ def _budget(args: argparse.Namespace, transactions) -> int:
     if args.creer_budget:
         if chemin.exists():
             raise SystemExit(f"{chemin} existe déjà : modifiez-le directement, ou supprimez-le pour le recréer.")
-        suggestion = suggerer_budget(transactions, categoriseur)
+        suggestion = suggerer_budget(transactions, categoriseur, args.depart)
         ecrire_config(chemin, suggestion, regles)
         print(f"Budget créé dans {chemin} d'après vos dépenses moyennes :")
         for c, montant in suggestion.items():
@@ -361,14 +406,14 @@ def _budget(args: argparse.Namespace, transactions) -> int:
 
     budget_suggere = not budget
     if budget_suggere:
-        budget = suggerer_budget(transactions, categoriseur)
+        budget = suggerer_budget(transactions, categoriseur, args.depart)
     detectees = detecter_recurrences(transactions, fin_releves)
     recurrences = [r for r in detectees if r.active]
-    du = fin_releves + timedelta(days=1)
+    du = args.depart + timedelta(days=1)
     _projection(args, transactions, detectees, du, du + timedelta(days=args.jours - 1))
     previsions = prevoir(recurrences, du, fin_releves + timedelta(days=31))
-    rapport = rapport_mensuel(transactions, mois, categoriseur, budget, previsions)
-    afficher_budget(rapport, fin_releves, budget_suggere, chemin)
+    rapport = rapport_mensuel(transactions, mois, categoriseur, budget, previsions, args.depart)
+    afficher_budget(rapport, max(fin_releves, args.depart), budget_suggere, chemin)
     print()
     afficher_hausses(recurrences, fin_releves)
     return 0

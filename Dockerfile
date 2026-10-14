@@ -5,6 +5,9 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONPATH=/app
 
 WORKDIR /app
+# Lecture des relevés PDF
+COPY requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
 COPY assistant_financier/ assistant_financier/
 COPY exemples/ exemples/
 
