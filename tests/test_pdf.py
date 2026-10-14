@@ -79,6 +79,35 @@ class TestControle(unittest.TestCase):
         self.assertIsNone(juillet.ecart)  # juin manquant : pas de comparaison possible
 
 
+class TestDiagnostic(unittest.TestCase):
+    def test_masquage(self):
+        from assistant_financier.pdf import masquer
+
+        texte = masquer("12.05 PRLV SEPA URSSAF AQUITAINE ECH/120526 1 234,56 M. Jean Dupont")
+        self.assertEqual(texte, "99.99 PRLV SEPA XXXXXX XXXXXXXXX XXX/999999 9 999,99 X. Xxxx Xxxxxx")
+
+    def test_diagnostic_anonyme(self):
+        from assistant_financier.pdf import diagnostic_pdf
+
+        texte = diagnostic_pdf(EXEMPLES / "pdf" / "releve_2026_01.pdf")
+        self.assertIn("en-tête du tableau", texte)
+        self.assertIn("solde daté", texte)
+        self.assertIn("soldes cohérents", texte)
+        for prive in ("CARREFOUR", "NETFLIX", "1 767,97", "00012345678", "SOCIETE EXEMPLE"):
+            self.assertNotIn(prive, texte)
+        # Textes du relevé (après « position: ») : aucun autre chiffre que 9.
+        lignes = texte.split("position:texte", 1)[1].strip().splitlines()
+        textes = [seg.split(":", 1)[1] for ligne in lignes for seg in ligne.split(" | ") if ":" in seg]
+        self.assertTrue(textes)
+        self.assertEqual({c for t in textes for c in t if c.isdigit()}, {"9"})
+
+    def test_option_diagnostic(self):
+        sortie = io.StringIO()
+        with redirect_stdout(sortie):
+            main([str(EXEMPLES / "pdf"), "--diagnostic"])
+        self.assertIn("aucun diagnostic nécessaire", sortie.getvalue())
+
+
 @unittest.skipIf(canvas is None, "reportlab requis pour fabriquer les PDF de test")
 class TestPdfFabriques(unittest.TestCase):
     def fabriquer(self, dessiner, **options):
@@ -110,6 +139,54 @@ class TestPdfFabriques(unittest.TestCase):
         ops, info = lire_pdf(self.fabriquer(dessiner))
         self.assertEqual([(t.date, t.montant) for t in ops], [(date(2025, 12, 28), -45.0), (date(2026, 1, 5), 10.0)])
         self.assertEqual((info.solde_initial, info.solde_final, info.ecart), (20.0, -15.0, 0.0))
+
+    def test_colonne_sens(self):
+        def dessiner(c):
+            c.drawString(40, 800, "Relevé du 01/05/2026 au 31/05/2026")
+            c.drawString(40, 760, "Date")
+            c.drawString(110, 760, "Libellé")
+            c.drawRightString(470, 760, "Montant")
+            c.drawString(500, 760, "Sens")
+            lignes = [("", "SOLDE AU 30/04/2026", "1 000,00", "C"),
+                      ("05/05/2026", "PRLV SEPA URSSAF AQUITAINE", "850,00", "D"),
+                      ("10/05/2026", "VIR SEPA RECU /DE CLIENT", "1 800,00", "C"),
+                      ("", "SOLDE AU 31/05/2026", "1 950,00", "C")]
+            for i, (jour, libelle, montant, sens) in enumerate(lignes):
+                y = 745 - 14 * i
+                c.drawString(40, y, jour)
+                c.drawString(110, y, libelle)
+                c.drawRightString(470, y, montant)
+                c.drawString(500, y, sens)
+
+        ops, info = lire_pdf(self.fabriquer(dessiner))
+        self.assertEqual([(t.libelle, t.montant) for t in ops],
+                         [("PRLV SEPA URSSAF AQUITAINE", -850.0), ("VIR SEPA RECU /DE CLIENT", 1800.0)])
+        self.assertEqual(info.ecart, 0.0)
+
+    def test_releve_mal_lu_declenche_une_alerte(self):
+        def dessiner(c):
+            c.drawString(40, 800, "Relevé du 01/05/2026 au 31/05/2026")
+            c.drawString(40, 760, "Date")
+            c.drawString(110, 760, "Libellé")
+            c.drawRightString(400, 760, "Débit")
+            c.drawRightString(480, 760, "Crédit")
+            c.drawString(110, 745, "SOLDE CREDITEUR AU 30.04.2026")
+            c.drawRightString(480, 745, "1 000,00")
+            c.drawString(40, 730, "05.05")
+            c.drawString(110, 730, "PRLV SEPA URSSAF")
+            c.drawRightString(400, 730, "850,00")
+            c.drawString(110, 715, "NOUVEAU SOLDE CREDITEUR AU 31.05.2026")
+            c.drawRightString(480, 715, "100,00")  # 50 € d'écart : une opération manque
+
+        chemin = self.fabriquer(dessiner)
+        sortie = io.StringIO()
+        with redirect_stdout(sortie):
+            code = main([str(chemin), "--alertes", "--solde", "100000"])
+        self.assertEqual(code, 3)
+        self.assertIn("écart de 50,00 €", sortie.getvalue())
+        with redirect_stdout(io.StringIO()) as diag:
+            main([str(chemin.parent), "--diagnostic"])
+        self.assertIn("soldes NON cohérents", diag.getvalue())
 
     def test_pdf_sans_texte(self):
         chemin = self.fabriquer(lambda c: c.rect(100, 100, 200, 200, fill=1))

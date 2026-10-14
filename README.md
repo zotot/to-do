@@ -78,8 +78,9 @@ Les sous-dossiers sont lus aussi (`releves/2025/`, `releves/2026/`…). Un fichi
 ### Relevés PDF
 
 L'assistant reconstitue le tableau des opérations à partir de la position du texte dans le PDF :
-colonnes **Date / Libellé / Débit / Crédit** (avec ou sans date de valeur) ou une colonne **Montant**
-signée, libellés sur plusieurs lignes, dates avec ou sans l'année, relevés sur plusieurs pages.
+colonnes **Date / Libellé / Débit / Crédit** (avec ou sans date de valeur), ou une colonne **Montant**
+signée ou suivie d'une colonne **Sens** (D/C), libellés sur plusieurs lignes, dates avec ou sans
+l'année, relevés sur plusieurs pages.
 
 Chaque relevé est **contrôlé** : ancien solde + crédits − débits doit redonner le nouveau solde
 (pour un relevé qui n'indique que le solde final, on reprend celui du relevé précédent).
@@ -90,8 +91,10 @@ Contrôle des soldes : 6/6 relevé(s) vérifié(s) ✓.
 Solde lu dans releve_2026_06.pdf : +5 716,41 € au 30/06/2026.
 ```
 
-En cas d'écart, le relevé concerné est signalé (« ⚠ … le relevé a peut-être été mal lu ») : la
-mise en page de votre banque nécessite alors un ajustement. Le **solde** est lu dans le dernier
+En cas d'écart, le relevé concerné est signalé (« ⚠ … le relevé a peut-être été mal lu ») et
+`--alertes` le compte comme une alerte : la mise en page de votre banque nécessite alors un ajustement.
+Pour cela, `--diagnostic` décrit la structure des relevés mal lus **en l'anonymisant** (chiffres
+remplacés par 9, noms par X) : vous pouvez la transmettre sans dévoiler vos opérations. Le **solde** est lu dans le dernier
 relevé (PDF ou OFX) : `--solde` n'est utile qu'avec des CSV, ou pour forcer une autre valeur.
 
 Non pris en charge : les relevés **scannés** (images sans texte) et les PDF protégés par mot de passe
@@ -111,7 +114,8 @@ Options utiles (identiques avec Docker) :
 | `--budget` | affiche les dépenses du mois par catégorie, comparées à votre budget |
 | `--mois 05/2026` | mois analysé par `--budget` (par défaut : mois du dernier relevé) |
 | `--creer-budget` | crée `budget.json` à partir de vos dépenses moyennes |
-| `--alertes` | n'affiche que les alertes (hausses d'abonnements, découvert prévu) ; code de sortie 3 s'il y a une alerte à traiter |
+| `--alertes` | n'affiche que les alertes (hausses d'abonnements, découvert prévu, relevé mal lu) ; code de sortie 3 s'il y a une alerte à traiter |
+| `--diagnostic` | décrit, anonymisée, la structure des relevés PDF mal lus (à transmettre pour adapter la lecture) |
 | `--config mon_budget.json` | utilise un autre fichier de budget que `budget.json` |
 
 Exemple avec les relevés fournis dans `exemples/` :
@@ -179,7 +183,9 @@ $ python3 -m assistant_financier releves/ --alertes --solde 500 --decouvert-auto
 
 Chaque opération est classée automatiquement (Logement, Alimentation, Transport, Abonnements & loisirs,
 Énergie & eau, Télécom, Santé, Assurances, Crédits, Impôts, Shopping, Restaurants, Épargne…)
-d'après les mots-clés de son libellé.
+d'après les mots-clés de son libellé. Pour un **compte professionnel** : Charges sociales (URSSAF,
+CIPAV, caisses de retraite…), Impôts & taxes (TVA, CFE…), Logiciels & services pro (OVH, Microsoft,
+Google Workspace…) et frais monétiques ; remises de carte et virements de clients comptent comme revenus.
 
 1. Créez votre budget à partir de vos habitudes :
 

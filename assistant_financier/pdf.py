@@ -55,7 +55,8 @@ class _Ligne:
 class _Colonnes:
     debit: float | None = None
     credit: float | None = None
-    montant: float | None = None  # colonne unique signée
+    montant: float | None = None  # colonne unique, signée ou complétée par une colonne « Sens »
+    sens: float | None = None  # colonne « Sens » : D (débit) / C (crédit)
     libelle: float | None = None
 
 
@@ -127,6 +128,8 @@ def _entete(ligne: _Ligne) -> _Colonnes | None:
             col.credit = s.centre
         elif re.match(r"^(MONTANT|MONTANTS)\b", t):
             col.montant = s.centre
+        elif t == "SENS":
+            col.sens = s.centre
         elif re.match(r"^(LIBELLE|NATURE|DESIGNATION|DETAIL|OPERATIONS?|DESCRIPTION)\b", t):
             col.libelle = s.x0
     a_date = any(_simplifier(s.texte).startswith("DATE") for s in ligne.segments)
@@ -181,8 +184,25 @@ def _montants(ligne: _Ligne, col: _Colonnes) -> tuple[list[tuple[_Segment, float
     return montants, reste
 
 
-def _signer(segment: _Segment, valeur: float, texte_ligne: str, col: _Colonnes) -> float:
+SENS_DEBIT = {"D", "DB", "DEB", "DEBIT"}
+SENS_CREDIT = {"C", "CR", "CRE", "CREDIT"}
+
+
+def _extraire_sens(reste: list[_Segment], col: _Colonnes) -> tuple[str | None, list[_Segment]]:
+    """Retire de la ligne l'indicateur D/C de la colonne « Sens », s'il y en a une."""
+    if col.sens is None:
+        return None, reste
+    for s in reste:
+        t = _simplifier(s.texte)
+        if abs(s.centre - col.sens) <= 25 and t in SENS_DEBIT | SENS_CREDIT:
+            return ("D" if t in SENS_DEBIT else "C"), [r for r in reste if r is not s]
+    return None, reste
+
+
+def _signer(segment: _Segment, valeur: float, texte_ligne: str, col: _Colonnes, sens: str | None = None) -> float:
     """Débit (négatif) ou crédit (positif) selon la colonne où se trouve le montant."""
+    if sens:
+        return -abs(valeur) if sens == "D" else abs(valeur)
     if col.debit is not None and col.credit is not None:
         if abs(segment.centre - col.debit) < abs(segment.centre - col.credit):
             return -abs(valeur)
@@ -192,7 +212,8 @@ def _signer(segment: _Segment, valeur: float, texte_ligne: str, col: _Colonnes) 
     return valeur  # colonne « Montant » : le signe est dans le texte
 
 
-def lire_pdf(chemin: Path) -> tuple[list[Transaction], InfoReleve]:
+def lire_pdf(chemin: Path, trace: list[tuple[_Ligne, str]] | None = None) -> tuple[list[Transaction], InfoReleve]:
+    """Opérations et soldes d'un relevé PDF. `trace` reçoit l'interprétation de chaque ligne (diagnostic)."""
     lignes = _extraire_lignes(chemin)
     if not lignes:
         raise ValueError("aucun texte dans ce PDF (relevé scanné ?) : utilisez le relevé téléchargé depuis votre banque")
@@ -209,17 +230,24 @@ def lire_pdf(chemin: Path) -> tuple[list[Transaction], InfoReleve]:
             transactions.append(Transaction(courante["date"], " ".join(courante["libelle"]), courante["montant"], chemin.name))
         courante = None
 
+    def noter(ligne: _Ligne, interpretation: str) -> None:
+        if trace is not None:
+            trace.append((ligne, interpretation))
+
     for ligne in lignes:
         nouvelles = _entete(ligne)
         if nouvelles:
             terminer()
             col = nouvelles
+            noter(ligne, "en-tête du tableau")
             continue
         if col is None:
-            continue  # avant le tableau : coordonnées, adresse…
+            noter(ligne, "avant le tableau")
+            continue  # coordonnées, adresse…
 
         texte = _simplifier(ligne.texte)
         montants, reste = _montants(ligne, col)
+        sens, reste = _extraire_sens(reste, col)
         texte_reste = " ".join(s.texte for s in reste)
 
         if RE_SOLDE.search(texte) and montants:
@@ -227,10 +255,12 @@ def lire_pdf(chemin: Path) -> tuple[list[Transaction], InfoReleve]:
             m = RE_DATE_COMPLETE.search(ligne.texte)
             jour = date(int(m.group(3)), int(m.group(2)), int(m.group(1))) if m else None
             segment, valeur = montants[-1]
-            soldes.append((jour, _signer(segment, valeur, texte, col), texte))
+            soldes.append((jour, _signer(segment, valeur, texte, col, sens), texte))
+            noter(ligne, "solde" + (" daté" if jour else " sans date"))
             continue
         if RE_TOTAL.match(_simplifier(texte_reste)):
             terminer()
+            noter(ligne, "total (ignoré)")
             continue
 
         m = RE_DATE_DEBUT.match(texte_reste)
@@ -238,12 +268,14 @@ def lire_pdf(chemin: Path) -> tuple[list[Transaction], InfoReleve]:
             terminer()
             jour = _date_operation(m, fin)
             if jour is None:
+                noter(ligne, "date invalide (ignorée)")
                 continue
             libelle = texte_reste[m.end():].strip()
             libelle = RE_DATE_DEBUT.sub("", libelle, count=1).strip()  # date de valeur
             segment, valeur = montants[-1]
-            courante = {"date": jour, "libelle": [libelle], "montant": _signer(segment, valeur, texte, col),
+            courante = {"date": jour, "libelle": [libelle], "montant": _signer(segment, valeur, texte, col, sens),
                         "page": ligne.page, "y": ligne.y, "suites": 0}
+            noter(ligne, "opération (débit)" if courante["montant"] < 0 else "opération (crédit)")
             continue
 
         # Suite du libellé de l'opération précédente (détails SEPA, référence…)
@@ -257,8 +289,10 @@ def lire_pdf(chemin: Path) -> tuple[list[Transaction], InfoReleve]:
             courante["libelle"].append(texte_reste)
             courante["y"] = ligne.y
             courante["suites"] += 1
+            noter(ligne, "suite du libellé")
         else:
             terminer()
+            noter(ligne, "montant sans date (ignoré)" if montants else "ignorée")
     terminer()
 
     if not transactions and col is None:
@@ -279,3 +313,46 @@ def lire_pdf(chemin: Path) -> tuple[list[Transaction], InfoReleve]:
         solde_final=final[1] if final else None,
     )
     return transactions, info
+
+
+# Mots génériques conservés par le diagnostic : ils décrivent la structure du relevé, pas vous.
+MOTS_CONSERVES = set(
+    "SOLDE CREDITEUR DEBITEUR AU DU LE AL DES DE ET EN TOTAL TOTAUX SOUS MOUVEMENTS OPERATION OPERATIONS "
+    "NOUVEAU ANCIEN PRECEDENT FINAL REPORT REPORTER DATE DATES VALEUR LIBELLE LIBELLES NATURE DESIGNATION "
+    "DETAIL DEBIT DEBITS CREDIT CREDITS EUROS EUR MONTANT SENS PAGE RELEVE COMPTE COURANT CB CARTE PRLV "
+    "PRELEVEMENT SEPA VIR VIREMENT RECU EMIS INST FACTURE COMMISSION COMMISSIONS FRAIS COTISATION REMISE "
+    "REMISES CHEQUE CHQ RETRAIT DAB PAIEMENT ECHEANCE PRET INTERETS TVA TPE PERIODE ARRETE AGIOS "
+    "D C DB CR DEB CRE".split()
+)
+
+
+def masquer(texte: str) -> str:
+    """Anonymise un texte : chiffres remplacés par 9, mots non génériques par des X."""
+    def mot(m: re.Match) -> str:
+        if _simplifier(m.group(0)) in MOTS_CONSERVES:
+            return m.group(0)
+        return "".join("X" if c.isupper() else "x" for c in m.group(0))
+    return re.sub(r"\d", "9", re.sub(r"[^\W\d_]+", mot, texte))
+
+
+def diagnostic_pdf(chemin: Path) -> str:
+    """Structure anonymisée d'un relevé PDF et interprétation de chaque ligne, pour ajuster la lecture."""
+    sortie = [f"Diagnostic de lecture : {chemin.name} (anonymisé : chiffres remplacés par 9, noms par X)"]
+    trace: list[tuple[_Ligne, str]] = []
+    try:
+        transactions, info = lire_pdf(chemin, trace)
+        debits = sum(1 for t in transactions if t.montant < 0)
+        sortie.append(
+            f"{len(transactions)} opérations lues ({debits} débits, {len(transactions) - debits} crédits) ; "
+            f"ancien solde {'trouvé' if info.solde_initial is not None else 'absent'}, "
+            f"nouveau solde {'trouvé' if info.solde_final is not None else 'absent'} ; "
+            + ("soldes cohérents" if info.ecart == 0 else "soldes NON cohérents" if info.ecart is not None else "contrôle impossible")
+        )
+    except ValueError as e:
+        sortie.append(f"Erreur : {masquer(str(e))}")
+    sortie.append("")
+    sortie.append("page  hauteur  interprétation              position:texte")
+    for ligne, interpretation in trace:
+        segments = " | ".join(f"{s.x0:.0f}:{masquer(s.texte)}" for s in ligne.segments)
+        sortie.append(f"p{ligne.page:<3} {ligne.y:7.0f}  {interpretation:<27} {segments}")
+    return "\n".join(sortie)

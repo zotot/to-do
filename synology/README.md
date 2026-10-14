@@ -80,8 +80,9 @@ créés au nom du propriétaire du dossier : vous pouvez les ouvrir et les modif
 À chaque passage, le script :
 
 - réécrit `rapport.txt` (alertes, opérations récurrentes, échéances du mois à venir, budget du mois) ;
-- vous envoie un e-mail **s'il y a une nouvelle alerte** : découvert prévu, ou hausse d'abonnement
-  récente. La même alerte n'est pas renvoyée tous les jours : l'e-mail suivant n'arrive que si la
+- vous envoie un e-mail **s'il y a une nouvelle alerte** : découvert prévu, hausse d'abonnement
+  récente, ou relevé PDF mal lu (dans ce cas, `diagnostic.txt` est déposé dans le dossier).
+  La même alerte n'est pas renvoyée tous les jours : l'e-mail suivant n'arrive que si la
   situation change (nouveau relevé, nouveau solde, nouvelle alerte) ;
 - vous envoie aussi un e-mail en cas de problème (dossier `releves` introuvable…).
 
@@ -96,7 +97,10 @@ Solde lu dans releve_2026_06.pdf : +5 716,41 € au 30/06/2026.
 ```
 
 Si un relevé est signalé « ⚠ … le relevé a peut-être été mal lu », la mise en page de votre banque
-demande un ajustement de l'assistant : ses chiffres ne sont alors pas fiables.
+demande un ajustement de l'assistant : ses chiffres ne sont alors pas fiables. Vous recevez un e-mail,
+et un fichier **`diagnostic.txt`** apparaît dans votre dossier Drive : il décrit la structure du relevé
+**de façon anonyme** (chiffres remplacés par 9, noms par X). Relisez-le, puis transmettez-le pour que
+la lecture soit adaptée à votre banque. Il disparaît de lui-même quand tous les relevés sont bien lus.
 
 **`alertes.conf`** : retirez le `#` devant `DECOUVERT_AUTORISE` et indiquez votre découvert autorisé,
 pour être prévenu d'un risque de rejet de prélèvement. `SOLDE` ne sert qu'avec des relevés CSV, qui

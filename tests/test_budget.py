@@ -38,6 +38,23 @@ class TestCategories(unittest.TestCase):
             with self.subTest(libelle=libelle):
                 self.assertEqual(self.cat.categoriser(T(date(2026, 3, 1), libelle, -10.0)), attendu)
 
+    def test_compte_professionnel(self):
+        cas = {
+            "PRLV SEPA URSSAF AQUITAINE": "Charges sociales",
+            "PRLV SEPA CIPAV RETRAITE": "Charges sociales",
+            "PRLV SEPA DGFIP TVA 3310CA3": "Impôts & taxes",
+            "CB OVH SAS": "Logiciels & services pro",
+            "CB AMAZON WEB SERVICES": "Logiciels & services pro",
+            "CB MICROSOFT XBOX": "Abonnements & loisirs",
+            "COMMISSIONS MONETIQUE": "Frais bancaires",
+        }
+        for libelle, attendu in cas.items():
+            with self.subTest(libelle=libelle):
+                self.assertEqual(self.cat.categoriser(T(date(2026, 3, 1), libelle, -10.0)), attendu)
+        # Encaissements : remises de carte et virements de clients sont des revenus.
+        self.assertEqual(self.cat.categoriser(T(date(2026, 3, 1), "REMISE CB 0512 TPE 1234", 640.0)), "Revenus")
+        self.assertEqual(self.cat.categoriser(T(date(2026, 3, 1), "VIR SEPA RECU /DE CLIENT /MOTIF FACTURE", 1800.0)), "Revenus")
+
     def test_credits(self):
         self.assertEqual(self.cat.categoriser(T(date(2026, 3, 1), "VIR SEPA RECU /DE ORANGE SA /MOTIF SALAIRE", 2000)), "Revenus")
         self.assertEqual(self.cat.categoriser(T(date(2026, 3, 1), "VIR SEPA RECU /DE MAMAN", 50)), "Revenus")

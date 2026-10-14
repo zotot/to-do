@@ -80,6 +80,21 @@ TEMPORAIRE="$DONNEES/.rapport.tmp"
     # Budget sans l'en-tête (fichiers ignorés, « N opérations lues »), déjà affiché au-dessus.
     assistant --budget "$@" | awk 'suite { if (!vide && $0 == "") { vide = 1; next } print } /opérations lues du/ { suite = 1 }'
 } > "$TEMPORAIRE"
+# Relevé PDF illisible ou mal lu : diagnostic anonymisé (chiffres → 9, noms → X), à transmettre
+# pour adapter la lecture à la mise en page de la banque.
+DIAGNOSTIC="$DONNEES/diagnostic.txt"
+if grep -qE "a peut-être été mal lu|Fichier illisible, ignoré : .*\.pdf" "$TEMPORAIRE"; then
+    assistant --diagnostic > "$DIAGNOSTIC.tmp"
+    chown "$PROPRIETAIRE" "$DIAGNOSTIC.tmp" 2>/dev/null
+    mv -f "$DIAGNOSTIC.tmp" "$DIAGNOSTIC"
+    {
+        echo
+        echo "⚠ Un relevé PDF n'a pas pu être lu correctement : voir diagnostic.txt (anonymisé) dans ce dossier."
+    } >> "$TEMPORAIRE"
+else
+    rm -f "$DIAGNOSTIC"
+fi
+
 chown "$PROPRIETAIRE" "$TEMPORAIRE" 2>/dev/null
 mv -f "$TEMPORAIRE" "$RAPPORT_FICHIER"
 

@@ -27,6 +27,12 @@ REGLES_PAR_DEFAUT: list[tuple[str, list[str]]] = [
         "ITUNES", "YOUTUBE", "GOOGLE PLAY", "PLAYSTATION", "STEAM", "XBOX", "NINTENDO", "SALLE DE SPORT",
         "FITNESS", "BASIC FIT", "CINEMA", "UGC", "PATHE",
     ]),
+    # Compte professionnel : abonnements logiciels (après les loisirs : « MICROSOFT XBOX » reste un loisir).
+    ("Logiciels & services pro", [
+        "OVH", "IONOS", "GANDI", "O2SWITCH", "GOOGLE WORKSPACE", "GSUITE", "MICROSOFT", "OFFICE 365", "ADOBE",
+        "NOTION", "SLACK", "ZOOM", "CANVA", "DROPBOX", "SHOPIFY", "WIX", "SQUARESPACE", "AWS", "AMAZON WEB SERVICES",
+        "PENNYLANE", "INDY", "TIIME", "QUICKBOOKS", "SAGE", "LINKEDIN", "CALENDLY", "DOCUSIGN", "YOUSIGN",
+    ]),
     ("Restaurants & sorties", [
         "RESTAURANT", "RESTO", "MCDONALD", "MCDONALDS", "MC DONALD", "BURGER KING", "KFC", "QUICK",
         "SUBWAY", "DOMINOS", "PIZZA", "UBER EATS", "UBEREATS", "DELIVEROO", "JUST EAT", "BRASSERIE",
@@ -45,14 +51,25 @@ REGLES_PAR_DEFAUT: list[tuple[str, list[str]]] = [
         "PHARMACIE", "PHARMA", "MEDECIN", "DOCTEUR", "DENTISTE", "OPTICIEN", "LABORATOIRE", "KINE",
         "HOPITAL", "CLINIQUE", "DOCTOLIB", "CPAM",
     ]),
+    # Compte professionnel : cotisations sociales et retraite des indépendants (avant « Assurances »).
+    ("Charges sociales", [
+        "URSSAF", "CIPAV", "CARMF", "CARPIMKO", "CAVEC", "CAVP", "CARCDSF", "CNBF", "SSI", "MSA", "IRCANTEC",
+        "RETRAITE", "PREVOYANCE", "MADELIN", "AG2R", "MALAKOFF", "HUMANIS", "KLESIA", "PRO BTP",
+    ]),
     ("Assurances", [
         "ASSURANCE", "ASSURANCES", "MAIF", "MACIF", "MAAF", "MATMUT", "GMF", "AXA", "ALLIANZ",
         "GROUPAMA", "MUTUELLE", "HARMONIE", "MGEN", "ALAN",
     ]),
     ("Crédits", ["ECHEANCE PRET", "PRET", "CETELEM", "COFIDIS", "SOFINCO", "FRANFINANCE", "ONEY"]),
-    ("Impôts & taxes", ["DGFIP", "IMPOT", "IMPOTS", "TRESOR PUBLIC", "FINANCES PUBLIQUES", "TAXE", "AMENDE", "ANTAI"]),
+    ("Impôts & taxes", [
+        "DGFIP", "IMPOT", "IMPOTS", "TRESOR PUBLIC", "FINANCES PUBLIQUES", "TAXE", "AMENDE", "ANTAI",
+        "TVA", "CFE", "CVAE", "SIE",
+    ]),
     ("Famille & éducation", ["CRECHE", "ECOLE", "CANTINE", "PAJEMPLOI", "GARDERIE"]),
-    ("Frais bancaires", ["FRAIS", "COTISATION", "COMMISSION", "AGIOS", "OFFRE GROUPEE", "TENUE DE COMPTE"]),
+    ("Frais bancaires", [
+        "FRAIS", "COTISATION", "COMMISSION", "COMMISSIONS", "AGIOS", "OFFRE GROUPEE", "TENUE DE COMPTE",
+        "MONETIQUE", "LOCATION TPE", "FRAIS TPE", "INTERETS DEBITEURS",
+    ]),
     ("Shopping", [
         "AMAZON", "CDISCOUNT", "FNAC", "DARTY", "BOULANGER", "IKEA", "LEROY MERLIN", "CASTORAMA", "ZARA",
         "KIABI", "DECATHLON", "ACTION", "PRIMARK", "VINTED", "ZALANDO", "SEPHORA", "ALIEXPRESS", "SHEIN",

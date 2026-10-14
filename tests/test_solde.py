@@ -76,6 +76,11 @@ class TestDepensesCourantes(unittest.TestCase):
         self.assertAlmostEqual(par_jour, 320.0 / 30.44, places=2)  # médiane de 310, 320 et 2010
 
 
+    def test_historique_tres_court(self):
+        ops = [Transaction(date(2026, 5, 5), "CB COURSES", -300.0), Transaction(date(2026, 5, 6), "CB DIVERS", -4.4)]
+        self.assertAlmostEqual(depenses_courantes_par_jour(ops, []), 304.4 / 30.44, places=2)
+
+
 class TestLigneDeCommande(unittest.TestCase):
     def lancer(self, *args, code_attendu=None):
         sortie = io.StringIO()

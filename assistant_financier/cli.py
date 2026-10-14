@@ -201,8 +201,12 @@ def main(argv: list[str] | None = None) -> int:
         help="montant de votre découvert autorisé, pour signaler un risque de rejet de prélèvement",
     )
     parser.epilog = (
-        f"Avec --alertes, le code de sortie vaut {CODE_ALERTE} s'il y a un découvert prévu "
-        f"ou une hausse d'abonnement de moins de {JOURS_HAUSSE_RECENTE} jours, 0 sinon."
+        f"Avec --alertes, le code de sortie vaut {CODE_ALERTE} s'il y a un découvert prévu, une hausse "
+        f"d'abonnement de moins de {JOURS_HAUSSE_RECENTE} jours ou un relevé PDF mal lu, 0 sinon."
+    )
+    parser.add_argument(
+        "--diagnostic", action="store_true",
+        help="décrire, anonymisée, la structure des relevés PDF mal lus (à transmettre pour ajuster la lecture)",
     )
     parser.add_argument(
         "--sans-depenses-courantes", action="store_true",
@@ -213,7 +217,10 @@ def main(argv: list[str] | None = None) -> int:
     ignores: list[str] = []
     erreurs: list[str] = []
     infos: list[InfoReleve] = []
-    transactions = charger_releves(_fichiers(args.releves, ignores), erreurs, infos)
+    chemins = _fichiers(args.releves, ignores)
+    transactions = charger_releves(chemins, erreurs, infos)
+    if args.diagnostic:
+        return _diagnostic(args, chemins, erreurs, infos)
     if ignores:
         print(f"Fichiers ignorés (formats acceptés : PDF, CSV, OFX) : {', '.join(ignores)}")
     for erreur in erreurs:
@@ -225,7 +232,10 @@ def main(argv: list[str] | None = None) -> int:
         return 1
     debut_releves, fin_releves = transactions[0].date, transactions[-1].date
     print(f"{len(transactions)} opérations lues du {debut_releves:%d/%m/%Y} au {fin_releves:%d/%m/%Y}.")
-    _controler_releves(infos)
+    # Relevé mal lu ou PDF illisible : les chiffres ne sont plus fiables, c'est une alerte.
+    args.releves_a_verifier = _controler_releves(infos) + sum(
+        1 for e in erreurs if e.split(" : ", 1)[0].lower().endswith(".pdf")
+    )
     args.depart = fin_releves  # date à laquelle le solde est connu
     if args.solde is None:
         _solde_automatique(args, infos, fin_releves)
@@ -257,7 +267,7 @@ def main(argv: list[str] | None = None) -> int:
             h for h in detecter_hausses(recurrences) if (fin_releves - h.depuis).days <= JOURS_HAUSSE_RECENTE
         ]
         decouvert = projection[1] if projection else None
-        return CODE_ALERTE if hausses_recentes or decouvert else 0
+        return CODE_ALERTE if hausses_recentes or decouvert or args.releves_a_verifier else 0
 
     print("=== Opérations récurrentes détectées ===")
     if not recurrences:
@@ -322,17 +332,21 @@ def main(argv: list[str] | None = None) -> int:
     return 0
 
 
-def _controler_releves(infos: list[InfoReleve]) -> None:
-    """Affiche le contrôle des soldes des relevés PDF/OFX : un relevé mal lu ne passe pas inaperçu."""
+def _controler_releves(infos: list[InfoReleve]) -> int:
+    """Affiche le contrôle des soldes des relevés PDF/OFX : un relevé mal lu ne passe pas inaperçu.
+
+    Renvoie le nombre de relevés dont les soldes ne concordent pas avec les opérations lues.
+    """
     if not infos:
-        return
+        return 0
     verifier_releves(infos)
     verifies = [i for i in infos if i.ecart == 0]
     faux = [i for i in infos if i.ecart not in (None, 0)]
     for i in sorted(faux, key=lambda i: i.fichier):
         print(
             f"⚠ {i.fichier} : les opérations lues ne correspondent pas aux soldes du relevé "
-            f"(écart de {euros(i.ecart, False)}). Le relevé a peut-être été mal lu : vérifiez ses opérations."
+            f"(écart de {euros(i.ecart, False)}). Le relevé a peut-être été mal lu : vérifiez ses opérations "
+            "(description anonymisée du relevé : option --diagnostic)."
         )
     non_verifiables = len(infos) - len(verifies) - len(faux)
     resume = f"Contrôle des soldes : {len(verifies)}/{len(infos)} relevé(s) vérifié(s)"
@@ -341,6 +355,33 @@ def _controler_releves(infos: list[InfoReleve]) -> None:
     if non_verifiables:
         resume += f", {non_verifiables} sans ancien solde à comparer"
     print(resume + ".")
+    return len(faux)
+
+
+def _diagnostic(args: argparse.Namespace, chemins: list[Path], erreurs: list[str], infos: list[InfoReleve]) -> int:
+    """Diagnostic anonymisé des relevés PDF illisibles, mal lus, ou donnés explicitement."""
+    from .pdf import diagnostic_pdf
+
+    verifier_releves(infos)
+    par_nom = {i.fichier: i for i in infos}
+    explicites = {Path(e).name for e in args.releves if Path(e).is_file()}
+    a_examiner = []
+    for chemin in chemins:
+        if chemin.suffix.lower() != ".pdf":
+            continue
+        info = par_nom.get(chemin.name)
+        illisible = any(e.startswith(f"{chemin.name} :") for e in erreurs)
+        mal_lu = info is not None and (info.ecart not in (None, 0) or info.nb_operations == 0)
+        if illisible or mal_lu or chemin.name in explicites:
+            a_examiner.append(chemin)
+    if not a_examiner:
+        print("Tous les relevés PDF sont lus correctement : aucun diagnostic nécessaire.")
+        return 0
+    for chemin in a_examiner:
+        print(diagnostic_pdf(chemin))
+        print()
+    print("Vérifiez que rien de personnel n'apparaît avant de transmettre ce diagnostic.")
+    return 0
 
 
 def _solde_automatique(args: argparse.Namespace, infos: list[InfoReleve], fin_releves: date) -> None:

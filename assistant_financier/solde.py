@@ -55,7 +55,9 @@ def depenses_courantes_par_jour(transactions: list[Transaction], recurrences: li
     complets = mois_complets(transactions[0].date, transactions[-1].date)
     if complets:
         return round(median(par_mois.get(m, 0.0) for m in complets) / 30.44, 2)
-    jours = (transactions[-1].date - transactions[0].date).days + 1
+    # Moins d'un mois complet d'historique : on répartit sur un mois au moins, sinon quelques
+    # achats sur deux jours donneraient une estimation démesurée.
+    jours = max((transactions[-1].date - transactions[0].date).days + 1, 30.44)
     return round(sum(par_mois.values()) / jours, 2)
 
 
