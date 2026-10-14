@@ -460,6 +460,8 @@ def _projection(args: argparse.Namespace, transactions, recurrences, du: date, a
     points = projeter_solde(args.solde, du, au, prevoir(actives, du, au), courant)
     decouvert = detecter_decouvert(points, args.decouvert_autorise)
     if decouvert:
+        if getattr(args, "releves_a_verifier", 0):
+            print("⚠ Attention : ce calcul repose sur des relevés mal lus (voir plus haut), ne vous y fiez pas.")
         afficher_decouvert(decouvert, args.solde, du - timedelta(days=1), courant, args.decouvert_autorise)
     return points, decouvert, courant
 

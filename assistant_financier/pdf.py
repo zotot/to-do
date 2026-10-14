@@ -224,9 +224,12 @@ def lire_pdf(chemin: Path, trace: list[tuple[_Ligne, str]] | None = None) -> tup
     col: _Colonnes | None = None
     courante: dict | None = None  # opération en cours, pour rattacher les suites de libellé
 
+    derniere_date: date | None = None  # date de la dernière opération (dates affichées une fois par jour)
+    apres_solde = False  # après un solde, les montants sans date sont des pieds de page, pas des opérations
+
     def terminer() -> None:
         nonlocal courante
-        if courante:
+        if courante and courante["montant"] is not None:
             transactions.append(Transaction(courante["date"], " ".join(courante["libelle"]), courante["montant"], chemin.name))
         courante = None
 
@@ -252,6 +255,7 @@ def lire_pdf(chemin: Path, trace: list[tuple[_Ligne, str]] | None = None) -> tup
 
         if RE_SOLDE.search(texte) and montants:
             terminer()
+            apres_solde = True
             m = RE_DATE_COMPLETE.search(ligne.texte)
             jour = date(int(m.group(3)), int(m.group(2)), int(m.group(1))) if m else None
             segment, valeur = montants[-1]
@@ -263,19 +267,45 @@ def lire_pdf(chemin: Path, trace: list[tuple[_Ligne, str]] | None = None) -> tup
             noter(ligne, "total (ignoré)")
             continue
 
+        def signe(montant: float) -> str:
+            return "débit" if montant < 0 else "crédit"
+
         m = RE_DATE_DEBUT.match(texte_reste)
-        if m and montants:
-            terminer()
+        if m:
             jour = _date_operation(m, fin)
             if jour is None:
+                terminer()
                 noter(ligne, "date invalide (ignorée)")
                 continue
+            terminer()
             libelle = texte_reste[m.end():].strip()
             libelle = RE_DATE_DEBUT.sub("", libelle, count=1).strip()  # date de valeur
-            segment, valeur = montants[-1]
-            courante = {"date": jour, "libelle": [libelle], "montant": _signer(segment, valeur, texte, col, sens),
+            montant = _signer(*montants[-1], texte, col, sens) if montants else None
+            courante = {"date": jour, "libelle": [libelle], "montant": montant,
                         "page": ligne.page, "y": ligne.y, "suites": 0}
-            noter(ligne, "opération (débit)" if courante["montant"] < 0 else "opération (crédit)")
+            derniere_date, apres_solde = jour, False
+            noter(ligne, f"opération ({signe(montant)})" if montant is not None else "opération (montant à suivre)")
+            continue
+
+        proche = courante is not None and ligne.page == courante["page"] and courante["y"] - ligne.y <= ECART_CONTINUATION
+        # Montant décalé d'une ligne par rapport à la date et au libellé (police, libellé sur 2 lignes).
+        if montants and proche and courante["montant"] is None:
+            courante["montant"] = _signer(*montants[-1], texte, col, sens)
+            if texte_reste:
+                courante["libelle"].append(texte_reste)
+            courante["y"] = ligne.y
+            noter(ligne, f"montant de l'opération ({signe(courante['montant'])})")
+            continue
+        # Autre opération du même jour : la date n'est imprimée que sur la première.
+        if (
+            montants and texte_reste and derniere_date and not apres_solde
+            and (col.libelle is None or reste[0].x0 >= col.libelle - 5)
+        ):
+            terminer()
+            montant = _signer(*montants[-1], texte, col, sens)
+            courante = {"date": derniere_date, "libelle": [texte_reste], "montant": montant,
+                        "page": ligne.page, "y": ligne.y, "suites": 0}
+            noter(ligne, f"opération du même jour ({signe(montant)})")
             continue
 
         # Suite du libellé de l'opération précédente (détails SEPA, référence…)
@@ -337,7 +367,7 @@ def masquer(texte: str) -> str:
 
 def diagnostic_pdf(chemin: Path) -> str:
     """Structure anonymisée d'un relevé PDF et interprétation de chaque ligne, pour ajuster la lecture."""
-    sortie = [f"Diagnostic de lecture : {chemin.name} (anonymisé : chiffres remplacés par 9, noms par X)"]
+    sortie = [f"Diagnostic de lecture : {masquer(chemin.name)} (anonymisé : chiffres remplacés par 9, noms par X)"]
     trace: list[tuple[_Ligne, str]] = []
     try:
         transactions, info = lire_pdf(chemin, trace)

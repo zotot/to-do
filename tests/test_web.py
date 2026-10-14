@@ -45,6 +45,13 @@ class TestPage(unittest.TestCase):
         self.assertIn("Découvert prévu", page)
         self.assertIn("découvert autorisé", page)
 
+    def test_decouvert_non_fiable_si_releve_mal_lu(self):
+        from assistant_financier.synthese import Controle
+
+        s = calculer(dossier_exemple(reglages="SOLDE=-20\n"))
+        s.controles.append(Controle("faux.pdf", "ecart", 12.5, 3))
+        self.assertIn("Découvert prévu (non fiable)", rendre_page(s))
+
     def test_libelles_echappes(self):
         csv = "Date;Libellé;Montant\n" + "".join(
             f"0{m}/0{m}/2026;<script>alert('x')</script> </script>;-9,99\n" for m in range(1, 7))

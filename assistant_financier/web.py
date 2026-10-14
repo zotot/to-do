@@ -227,7 +227,10 @@ def _alertes(s: Synthese) -> str:
                  f"Versez au moins {eur(d.a_approvisionner)} avant le {d.date:%d/%m}.")
         if d.depassement_autorise:
             texte += f" Découvert autorisé dépassé dès le {d.depassement_autorise:%d/%m} : risque de rejet de prélèvement."
-        cartes.append(("critique", "⚠", "Découvert prévu", texte))
+        if s.releves_mal_lus:
+            texte = ("Calcul fondé sur des relevés mal lus : ne vous y fiez pas tant que leur lecture n'est pas "
+                     "corrigée. " + texte)
+        cartes.append(("critique", "⚠", "Découvert prévu" + (" (non fiable)" if s.releves_mal_lus else ""), texte))
     for c in s.releves_mal_lus:
         cartes.append(("critique", "⚠", "Relevé mal lu",
                        f"{c.fichier} : les opérations lues ne correspondent pas aux soldes (écart de {eur(c.ecart or 0)}). "

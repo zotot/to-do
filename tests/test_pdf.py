@@ -188,6 +188,67 @@ class TestPdfFabriques(unittest.TestCase):
             main([str(chemin.parent), "--diagnostic"])
         self.assertIn("soldes NON cohérents", diag.getvalue())
 
+    def entete(self, c):
+        c.drawString(40, 800, "Relevé du 01/05/2026 au 31/05/2026")
+        c.drawString(40, 760, "Date")
+        c.drawString(110, 760, "Opération")
+        c.drawRightString(420, 760, "Débit")
+        c.drawRightString(500, 760, "Crédit")
+        c.drawString(110, 745, "SOLDE CREDITEUR AU 30/04/2026")
+        c.drawRightString(500, 745, "1 000,00")
+
+    def test_date_imprimee_une_fois_par_jour(self):
+        def dessiner(c):
+            self.entete(c)
+            c.drawString(40, 730, "05/05")
+            c.drawString(110, 730, "PRLV SEPA URSSAF")
+            c.drawRightString(420, 730, "300,00")
+            c.drawString(110, 716, "PRLV SEPA FREE MOBILE")  # même jour, sans date
+            c.drawRightString(420, 716, "19,99")
+            c.drawString(110, 702, "VIR SEPA RECU /DE CLIENT")  # même jour, sans date
+            c.drawRightString(500, 702, "500,00")
+            c.drawString(40, 688, "12/05")
+            c.drawString(110, 688, "CB OVH SAS")
+            c.drawRightString(420, 688, "12,00")
+            c.drawString(110, 670, "SOLDE CREDITEUR AU 31/05/2026")
+            c.drawRightString(500, 670, "1 168,01")
+            c.drawString(110, 640, "Montant de votre autorisation de découvert")  # pied de page
+            c.drawRightString(500, 640, "500,00")
+
+        ops, info = lire_pdf(self.fabriquer(dessiner))
+        self.assertEqual([(t.date.day, t.libelle, t.montant) for t in ops], [
+            (5, "PRLV SEPA URSSAF", -300.0), (5, "PRLV SEPA FREE MOBILE", -19.99),
+            (5, "VIR SEPA RECU /DE CLIENT", 500.0), (12, "CB OVH SAS", -12.0)])
+        self.assertEqual(info.ecart, 0.0)
+
+    def test_montant_decale_sous_le_libelle(self):
+        def dessiner(c):
+            self.entete(c)
+            c.drawString(40, 730, "05/05")
+            c.drawString(110, 730, "PRLV SEPA URSSAF AQUITAINE")
+            c.drawString(110, 719, "ECH/050526 REF 12345")
+            c.drawRightString(420, 715, "300,00")  # montant sur la ligne du dessous, décalé
+            c.drawString(40, 700, "12/05")
+            c.drawString(110, 700, "CB OVH SAS")
+            c.setFont("Helvetica", 8)
+            c.drawRightString(420, 696, "12,00")  # police différente, 4 points plus bas
+            c.setFont("Helvetica", 12)
+            c.drawString(110, 670, "SOLDE CREDITEUR AU 31/05/2026")
+            c.drawRightString(500, 670, "688,00")
+
+        ops, info = lire_pdf(self.fabriquer(dessiner))
+        self.assertEqual([(t.date.day, t.libelle, t.montant) for t in ops], [
+            (5, "PRLV SEPA URSSAF AQUITAINE ECH/050526 REF 12345", -300.0), (12, "CB OVH SAS", -12.0)])
+        self.assertEqual(info.ecart, 0.0)
+
+    def test_nom_de_fichier_masque_dans_le_diagnostic(self):
+        from assistant_financier.pdf import diagnostic_pdf
+
+        dossier = Path(tempfile.mkdtemp())
+        chemin = dossier / "RLV_011_77038680_43_20251107.pdf"
+        chemin.write_bytes(self.fabriquer(lambda c: c.drawString(100, 700, "x")).read_bytes())
+        self.assertNotIn("77038680", diagnostic_pdf(chemin))
+
     def test_pdf_sans_texte(self):
         chemin = self.fabriquer(lambda c: c.rect(100, 100, 200, 200, fill=1))
         with self.assertRaisesRegex(ValueError, "scanné"):
