@@ -9,3 +9,19 @@ services:
       # Par défaut ./donnees ; pour un dossier Synology Drive, ajoutez dans .env :
       #   DONNEES=/volume1/homes/<utilisateur>/Drive/Finances
       - ${DONNEES:-./donnees}:/donnees
+
+  # Interface web : docker compose --profile web up -d   puis http://<machine>:8765
+  # Définissez le mot de passe dans .env : MOT_DE_PASSE_WEB=...
+  web:
+    image: assistant-financier
+    build: .
+    profiles: ["web"]
+    command: ["--web"]
+    user: "${UID:-1000}:${GID:-1000}"
+    ports:
+      - "${PORT_WEB:-8765}:8765"
+    environment:
+      MOT_DE_PASSE_WEB: ${MOT_DE_PASSE_WEB:-}
+    volumes:
+      - ${DONNEES:-./donnees}:/donnees:ro
+    restart: unless-stopped

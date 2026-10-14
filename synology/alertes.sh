@@ -18,6 +18,9 @@
 # Réglages facultatifs dans DOSSIER_DONNEES/alertes.conf :
 #   SOLDE=1520.40               inutile avec des relevés PDF ou OFX (solde lu dans le relevé)
 #   DECOUVERT_AUTORISE=300
+#   MOT_DE_PASSE_WEB=...        mot de passe de l'interface web (généré au premier passage)
+#   PORT_WEB=8765               port de l'interface web : http://<adresse-du-nas>:8765
+#   INTERFACE_WEB=non           pour ne pas lancer l'interface web
 
 PATH=/usr/local/bin:/usr/bin:/bin:$PATH
 DOSSIER="$(cd "$(dirname "$0")/.." && pwd)"
@@ -30,6 +33,12 @@ if [ ! -d "$DONNEES/releves" ]; then
     echo "Dossier introuvable : $DONNEES/releves (déposez-y vos relevés CSV/OFX)."
     exit 1
 fi
+
+reglage_brut() {
+    [ -f "$DONNEES/alertes.conf" ] || return 0
+    sed -n "s/^[[:space:]]*$1[[:space:]]*=[[:space:]]*//p" "$DONNEES/alertes.conf" \
+        | tail -n 1 | tr -d '\r' | sed 's/[[:space:]]*$//'
+}
 
 reglage() {
     [ -f "$DONNEES/alertes.conf" ] || return 0
@@ -70,15 +79,54 @@ if [ ! -f "$DONNEES/alertes.conf" ]; then
         echo "# SOLDE=1520,40"
         echo "# Montant de votre découvert autorisé (0 si aucun) :"
         echo "# DECOUVERT_AUTORISE=300"
+        echo "# Interface web : port (8765 par défaut) ; INTERFACE_WEB=non pour la désactiver."
+        echo "# PORT_WEB=8765"
     } > "$DONNEES/alertes.conf"
     chown "$PROPRIETAIRE" "$DONNEES/alertes.conf" 2>/dev/null
 fi
 [ -f "$DONNEES/budget.json" ] || assistant --creer-budget >/dev/null
 
+# Interface web (tableau de bord) : conteneur permanent, recréé quand l'image ou les réglages changent.
+CONTENEUR_WEB=assistant-financier-web
+ETAT_WEB=""
+if [ "$(reglage_brut INTERFACE_WEB)" = "non" ]; then
+    docker rm -f "$CONTENEUR_WEB" >/dev/null 2>&1
+else
+    MOT_DE_PASSE_WEB=$(reglage_brut MOT_DE_PASSE_WEB)
+    if [ -z "$MOT_DE_PASSE_WEB" ]; then
+        MOT_DE_PASSE_WEB=$(head -c 32 /dev/urandom | base64 | tr -dc 'A-Za-z0-9' | cut -c1-16)
+        {
+            echo
+            echo "# Mot de passe de l'interface web (identifiant au choix), généré automatiquement :"
+            echo "MOT_DE_PASSE_WEB=$MOT_DE_PASSE_WEB"
+        } >> "$DONNEES/alertes.conf"
+    fi
+    PORT_WEB=$(reglage_brut PORT_WEB)
+    PORT_WEB=${PORT_WEB:-8765}
+    CONFIG_WEB=$(printf '%s|%s|%s|%s|%s' "$VERSION" "$PORT_WEB" "$MOT_DE_PASSE_WEB" "$DONNEES" "$PROPRIETAIRE" \
+        | md5sum | cut -c1-12)
+    if [ "$(docker inspect -f '{{ index .Config.Labels "assistant.config" }}|{{ .State.Running }}' \
+            "$CONTENEUR_WEB" 2>/dev/null)" != "$CONFIG_WEB|true" ]; then
+        docker rm -f "$CONTENEUR_WEB" >/dev/null 2>&1
+        HEURE=""
+        [ -f /etc/localtime ] && HEURE="-v /etc/localtime:/etc/localtime:ro"
+        # shellcheck disable=SC2086
+        if ! ERREUR_WEB=$(docker run -d --name "$CONTENEUR_WEB" --restart unless-stopped \
+                -p "$PORT_WEB:8765" --user "$PROPRIETAIRE" -v "$DONNEES:/donnees:ro" $HEURE \
+                -e MOT_DE_PASSE_WEB="$MOT_DE_PASSE_WEB" -e VERSION_ASSISTANT="$VERSION" \
+                --label "assistant.config=$CONFIG_WEB" "$IMAGE" --web 2>&1); then
+            docker rm -f "$CONTENEUR_WEB" >/dev/null 2>&1
+            ETAT_WEB="⚠ L'interface web n'a pas pu démarrer (port $PORT_WEB déjà utilisé ? changez PORT_WEB) : $(echo "$ERREUR_WEB" | tail -n 1)"
+        fi
+    fi
+    [ -n "$ETAT_WEB" ] || ETAT_WEB="Interface web : http://<adresse-du-nas>:$PORT_WEB (mot de passe dans alertes.conf)"
+fi
+
 # 1. Rapport complet, lisible depuis Synology Drive.
 TEMPORAIRE="$DONNEES/.rapport.tmp"
 {
     echo "Rapport de l'assistant financier, généré le $(date '+%d/%m/%Y à %H:%M') (version $VERSION)"
+    [ -n "$ETAT_WEB" ] && echo "$ETAT_WEB"
     if [ -n "$SOLDE" ]; then
         echo "Solde imposé dans alertes.conf : $SOLDE € (retirez-le pour utiliser celui des relevés)"
     fi

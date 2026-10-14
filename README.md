@@ -115,6 +115,7 @@ Options utiles (identiques avec Docker) :
 | `--mois 05/2026` | mois analysé par `--budget` (par défaut : mois du dernier relevé) |
 | `--creer-budget` | crée `budget.json` à partir de vos dépenses moyennes |
 | `--alertes` | n'affiche que les alertes (hausses d'abonnements, découvert prévu, relevé mal lu) ; code de sortie 3 s'il y a une alerte à traiter |
+| `--web` | lance l'interface web (mot de passe : variable `MOT_DE_PASSE_WEB`) ; `--port` pour changer le port |
 | `--diagnostic` | décrit, anonymisée, la structure des relevés PDF mal lus (à transmettre pour adapter la lecture) |
 | `--config mon_budget.json` | utilise un autre fichier de budget que `budget.json` |
 
@@ -136,6 +137,23 @@ $ python3 -m assistant_financier exemples/ --solde 1204.33
   dim. 05/07/2026  LOYER IMMO GESTION                    -780,00 €   solde prévu : +2 874,33 €
   ...
 ```
+
+## Interface web
+
+Un tableau de bord dans le navigateur : alertes, solde actuel et prévu, graphique du solde sur 31 jours,
+prochaines échéances, budget du mois, revenus et dépenses par mois, récurrences et contrôle des relevés.
+Il est servi par l'assistant lui-même (aucune dépendance ni ressource externe) et protégé par mot de passe.
+
+```bash
+# Python, depuis le dossier qui contient releves/ :
+MOT_DE_PASSE_WEB=mon-mot-de-passe python3 -m assistant_financier --web      # http://localhost:8765
+
+# Docker : MOT_DE_PASSE_WEB=... dans .env, puis
+docker compose --profile web up -d
+```
+
+Sur un NAS Synology, la tâche quotidienne lance le site toute seule (voir le guide Synology).
+La page se recalcule dès qu'un fichier du dossier change.
 
 ## Alertes : hausses d'abonnements
 

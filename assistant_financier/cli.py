@@ -245,6 +245,11 @@ def main(argv: list[str] | None = None) -> int:
         f"d'abonnement de moins de {JOURS_HAUSSE_RECENTE} jours ou un relevé PDF mal lu, 0 sinon."
     )
     parser.add_argument(
+        "--web", action="store_true",
+        help="lancer l'interface web (dossier courant : releves/, budget.json ; mot de passe : MOT_DE_PASSE_WEB)",
+    )
+    parser.add_argument("--port", type=int, help="port de l'interface web (défaut : 8765)")
+    parser.add_argument(
         "--diagnostic", action="store_true",
         help="décrire, anonymisée, la structure des relevés PDF mal lus (à transmettre pour ajuster la lecture)",
     )
@@ -253,6 +258,11 @@ def main(argv: list[str] | None = None) -> int:
         help="projeter le solde avec les seuls prélèvements récurrents (sans courses, essence…)",
     )
     args = parser.parse_args(argv)
+    if args.web:
+        from .web import servir
+
+        dossier = Path(args.releves[0]).parent if args.releves != ["releves"] else Path.cwd()
+        return servir(dossier, args.port)
 
     ignores: list[str] = []
     erreurs: list[str] = []

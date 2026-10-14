@@ -86,6 +86,26 @@ créés au nom du propriétaire du dossier : vous pouvez les ouvrir et les modif
   situation change (nouveau relevé, nouveau solde, nouvelle alerte) ;
 - vous envoie aussi un e-mail en cas de problème (dossier `releves` introuvable…).
 
+## Interface web
+
+La tâche quotidienne lance aussi un **tableau de bord** consultable depuis un navigateur, sur ordinateur
+ou téléphone : **`http://<adresse-du-nas>:8765`** (la même adresse IP que DSM, port 8765).
+
+- **Mot de passe** : généré au premier passage et écrit dans `alertes.conf` (ligne `MOT_DE_PASSE_WEB=`).
+  Le navigateur demande un identifiant : mettez ce que vous voulez, seul le mot de passe compte.
+  Pour le changer, remplacez-le dans `alertes.conf` : le site est relancé au passage suivant.
+- **Contenu** : alertes, solde actuel et prévu, graphique du solde sur 31 jours (avec le point le plus
+  bas), prochaines échéances, budget du mois, revenus et dépenses par mois, opérations récurrentes et
+  contrôle des relevés.
+- **Toujours à jour** : la page se recalcule dès qu'un fichier du dossier Drive change (nouveau relevé,
+  `budget.json` modifié). Le site redémarre seul avec le NAS et lit le dossier en lecture seule.
+- **Réglages** dans `alertes.conf` : `PORT_WEB=8790` si le port 8765 est déjà pris, `INTERFACE_WEB=non`
+  pour ne pas lancer le site.
+
+**Depuis l'extérieur de chez vous** : n'ouvrez pas le port 8765 sur votre box. Passez par le VPN de
+votre NAS (paquet VPN Server) ou par le proxy inversé de DSM en HTTPS (Panneau de configuration →
+Portail de connexion → Avancé → Proxy inversé, avec un certificat Let's Encrypt).
+
 ## 5. Vos réglages, depuis Drive
 
 **Le solde** est lu automatiquement dans votre dernier relevé PDF : rien à saisir. En haut du rapport,
